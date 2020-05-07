@@ -1,4 +1,5 @@
 package com.martige
+
 import net.dv8tion.jda.api.JDABuilder
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
 import net.dv8tion.jda.api.hooks.ListenerAdapter
@@ -14,9 +15,7 @@ class Bot : ListenerAdapter() {
     override fun onMessageReceived(event: MessageReceivedEvent) {
         if (event.author.isBot) return
         if (event.channel.id != channelId.toString()) return
-        when (Command.valueOfLabel(
-            event.message.contentStripped.toLowerCase().trim()
-        ) ?: Command.UNKNOWN) {
+        when (Command.valueOfLabel(event.message.contentStripped.toLowerCase().trim()) ?: Command.UNKNOWN) {
             Command.JOIN -> BotService().addToQueue(event)
             Command.LEAVE -> BotService().removeFromQueue(event)
             Command.LIST -> BotService().listQueue(event)
@@ -28,10 +27,10 @@ class Bot : ListenerAdapter() {
     }
 
 
-
     companion object {
         private val log: Logger = LoggerFactory.getLogger(Bot::class.java)
         var channelId: Long = 0
+
         @JvmStatic
         fun main(args: Array<String>) {
             val props = getProps()
