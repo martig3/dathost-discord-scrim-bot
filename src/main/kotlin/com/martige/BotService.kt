@@ -5,15 +5,16 @@ import com.google.gson.reflect.TypeToken
 import com.martige.model.DatHostGameServer
 import net.dv8tion.jda.api.MessageBuilder
 import net.dv8tion.jda.api.entities.User
+import net.dv8tion.jda.api.entities.VoiceChannel
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.lang.IllegalStateException
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -29,14 +30,21 @@ class BotService {
         var discordPrivilegeRoleId: Long = 0
         var discordVoiceChannel: Long = 0
         private var queue: ArrayList<User> = arrayListOf()
+        val httpClient = OkHttpClient.Builder()
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+
         fun init(props: Properties) {
-            gameServerIp = props.getProperty("gameServerIp")
-            gameServerId = props.getProperty("gameServerId")
+            gameServerIp = props.getProperty("gameserver.ip")
+            gameServerId = props.getProperty("gameserver.id")
             auth64String += Base64.getEncoder()
-                .encodeToString("${props.getProperty("user")}:${props.getProperty("password")}".toByteArray())
-            dmTemplate = props.getProperty("dmTemplate") ?: dmTemplate
-            discordPrivilegeRoleId = props.getProperty("discordPrivilegeRoleId").toLong()
-            discordVoiceChannel = props.getProperty("discordVoiceChannel").toLong()
+                .encodeToString(
+                    "${props.getProperty("dathost.username")}:${props.getProperty("dathost.password")}"
+                        .toByteArray()
+                )
+            dmTemplate = props.getProperty("dm.template") ?: dmTemplate
+            discordPrivilegeRoleId = props.getProperty("discord.role.privilege.id").toLong()
+            discordVoiceChannel = props.getProperty("discord.voicechannel").toLong()
         }
     }
 
@@ -72,7 +80,7 @@ class BotService {
         }
         val stringBuilder = StringBuilder()
             .append("The following users are queued:\n")
-        queue.forEach { stringBuilder.append(" - <@${it.id}>\n") }
+        queue.forEach { stringBuilder.append("- <@${it.id}>\n") }
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
@@ -81,50 +89,29 @@ class BotService {
             event.channel.sendMessage("You do not have the correct role to use this command").queue()
             return
         }
-        if (queue.size == 10 || override) {
+        val gameServerOne = firstGameServer(httpClient) ?: return
+        val isEmpty = gameServerOne.players_online == 0
+        if ((queue.size == 10 || override) && isEmpty) {
             event.channel.sendMessage("Starting scrim server...").queue()
         } else {
-            event.channel.sendMessage("Yo, <@${event.author.id}> I cant start the server because the queue isn't full")
+            if (!isEmpty) event.channel
+                .sendMessage("Yo, <@${event.author.id}> I cant start the server it's not empty")
                 .queue()
+            else
+                event.channel
+                    .sendMessage("Yo, <@${event.author.id}> I cant start the server because the queue isn't full")
+                    .queue()
             return
         }
         val randomPass = Math.random().toString().replace("0.", "")
-        val httpClient = OkHttpClient.Builder()
-            .readTimeout(30, TimeUnit.SECONDS)
-            .build()
-        val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
-        val formUrlEncoded: MediaType? = "application/x-www-form-urlencoded; charset=utf-8".toMediaTypeOrNull()
-        val changePasswordRequest = Request.Builder()
-            .url("https://dathost.net/api/0.1/game-servers/$gameServerId")
-            .put("csgo_settings.password=$randomPass".toRequestBody(formUrlEncoded))
-            .header("Authorization", auth64String)
-            .build()
-        val passwordChangeResponse = httpClient.newCall(changePasswordRequest).execute()
+        val passwordChangeResponse = changeGameServerPassword(randomPass)
         log.info("Server password change response: ${passwordChangeResponse.message}")
-        val stopServerRequest = Request.Builder()
-            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/stop")
-            .post("".toRequestBody(json))
-            .header("Authorization", auth64String)
-            .build()
-        val stopServerResponse = httpClient.newCall(stopServerRequest).execute()
+        val stopServerResponse = stopGameServer()
         log.info("Server stop response: ${stopServerResponse.message}")
-        val startServerRequest = Request.Builder()
-            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/start")
-            .post("".toRequestBody(json))
-            .header("Authorization", auth64String)
-            .build()
-        val startServerResponse = httpClient.newCall(startServerRequest).execute()
+        val startServerResponse = startGameServer()
         log.info("Server start response: ${startServerResponse.message}")
         for (x in 0..24) {
-            val serverStateRequest = Request.Builder()
-                .url("https://dathost.net/api/0.1/game-servers")
-                .get()
-                .header("Authorization", auth64String)
-                .build()
-            val serverStateResponse = httpClient.newCall(serverStateRequest).execute()
-            val responseBody = serverStateResponse.body?.string() ?: return
-            val gameServers = Gson().fromJson<List<DatHostGameServer>>(responseBody)
-            val gameServer = gameServers.first { it.id == gameServerId }
+            val gameServer = firstGameServer(httpClient) ?: return
             if (gameServer.booting) {
                 log.info("Server is still booting, waiting 5s...")
                 Thread.sleep(5000)
@@ -137,22 +124,43 @@ class BotService {
             user.openPrivateChannel()
                 .queue { privateChannel -> privateChannel.sendMessage(generateTemplate(randomPass)).queue() }
         }
+        val unconnectedUsers: ArrayList<User> = arrayListOf()
         queue.forEach { user ->
-            try {
-            event.guild.moveVoiceMember(
-                event.guild.getMember(user)!!,
-                event.guild.getVoiceChannelById(discordVoiceChannel)
-            ).queue()
-            } catch (e: IllegalStateException) {
-                log.info("${user.name} is not connected to the server")
+            val channel: VoiceChannel? = event.guild.voiceChannels
+                .firstOrNull { voiceChannel ->
+                    voiceChannel.members.firstOrNull { member -> member.user.idLong == user.idLong } != null
+                }
+            if (channel != null) {
+                event.guild.moveVoiceMember(
+                    event.guild.getMember(user)!!,
+                    event.guild.getVoiceChannelById(discordVoiceChannel)
+                ).queue()
+            } else {
+                unconnectedUsers.add(user)
+                user.openPrivateChannel()
+                    .queue { privateChannel ->
+                        privateChannel.sendMessage(
+                            "Please connect to the `${event.guild.name} > ${event.guild.getVoiceChannelById(
+                                discordVoiceChannel
+                            )?.name}` voice channel"
+                        ).queue()
+                    }
             }
         }
         event.channel.sendMessage(
-            MessageBuilder().append("Moved queued users to the scrim channel, your scrim is starting").setTTS(true)
+            MessageBuilder().append("Moved queued users to the scrim channel, your scrim is starting")
+                .setTTS(true)
                 .build()
         ).queue()
+        if (unconnectedUsers.size > 0) {
+            val stringBuilder =
+                StringBuilder().append("The following queued users are not in the discord and cannot be moved to the default scrim voice channel:\n")
+            unconnectedUsers.forEach { stringBuilder.append("- <@${it.id}>") }
+            event.channel.sendMessage(stringBuilder.toString()).queue()
+        }
         // cleanup
         queue.clear()
+        log.info("Startup process has completed successfully")
     }
 
     fun unknownCommand(event: MessageReceivedEvent) {
@@ -166,6 +174,48 @@ class BotService {
             .filter { it != Bot.Command.UNKNOWN }
             .forEach { stringBuilder.append("`${it.command}` - ${it.description}\n") }
         event.channel.sendMessage(stringBuilder.toString()).queue()
+    }
+
+    private fun firstGameServer(httpClient: OkHttpClient): DatHostGameServer? {
+        val serverStateRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers")
+            .get()
+            .header("Authorization", auth64String)
+            .build()
+        val serverStateResponse = httpClient.newCall(serverStateRequest).execute()
+        val responseBody = serverStateResponse.body?.string() ?: return null
+        val gameServers = Gson().fromJson<List<DatHostGameServer>>(responseBody)
+        return gameServers.first { it.id == gameServerId }
+    }
+
+    private fun changeGameServerPassword(password: String): Response {
+        val formUrlEncoded: MediaType? = "application/x-www-form-urlencoded; charset=utf-8".toMediaTypeOrNull()
+        val changePasswordRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId")
+            .put("csgo_settings.password=$password".toRequestBody(formUrlEncoded))
+            .header("Authorization", auth64String)
+            .build()
+        return httpClient.newCall(changePasswordRequest).execute()
+    }
+
+    private fun stopGameServer(): Response {
+        val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
+        val stopServerRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/stop")
+            .post("".toRequestBody(json))
+            .header("Authorization", auth64String)
+            .build()
+        return httpClient.newCall(stopServerRequest).execute()
+    }
+
+    private fun startGameServer(): Response {
+        val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
+        val startServerRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/start")
+            .post("".toRequestBody(json))
+            .header("Authorization", auth64String)
+            .build()
+        return httpClient.newCall(startServerRequest).execute()
     }
 
     private fun generateTemplate(password: String): String {

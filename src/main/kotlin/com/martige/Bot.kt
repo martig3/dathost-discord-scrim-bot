@@ -34,8 +34,8 @@ class Bot : ListenerAdapter() {
         @JvmStatic
         fun main(args: Array<String>) {
             val props = getProps()
-            discordTextChannelId = props.getProperty("discordTextChannelId").toLong()
-            val botToken = props.getProperty("botToken")
+            discordTextChannelId = props.getProperty("discord.textchannel.id").toLong()
+            val botToken = props.getProperty("bot.token")
             BotService.init(props)
             JDABuilder
                 .create(
