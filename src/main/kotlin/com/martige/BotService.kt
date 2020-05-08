@@ -28,7 +28,7 @@ class BotService {
         var auth64String = "Basic "
         var dmTemplate = "Your scrim server is ready! Paste this into your console:"
         var discordPrivilegeRoleId: Long = 0
-        var discordVoiceChannel: Long = 0
+        var discordVoiceChannelId: Long = 0
         private var queue: ArrayList<User> = arrayListOf()
         val httpClient = OkHttpClient.Builder()
             .readTimeout(30, TimeUnit.SECONDS)
@@ -44,7 +44,7 @@ class BotService {
                 )
             dmTemplate = props.getProperty("dm.template") ?: dmTemplate
             discordPrivilegeRoleId = props.getProperty("discord.role.privilege.id").toLong()
-            discordVoiceChannel = props.getProperty("discord.voicechannel").toLong()
+            discordVoiceChannelId = props.getProperty("discord.voicechannel.id").toLong()
         }
     }
 
@@ -133,7 +133,7 @@ class BotService {
             if (channel != null) {
                 event.guild.moveVoiceMember(
                     event.guild.getMember(user)!!,
-                    event.guild.getVoiceChannelById(discordVoiceChannel)
+                    event.guild.getVoiceChannelById(discordVoiceChannelId)
                 ).queue()
             } else {
                 unconnectedUsers.add(user)
@@ -141,7 +141,7 @@ class BotService {
                     .queue { privateChannel ->
                         privateChannel.sendMessage(
                             "Please connect to the `${event.guild.name} > ${event.guild.getVoiceChannelById(
-                                discordVoiceChannel
+                                discordVoiceChannelId
                             )?.name}` voice channel"
                         ).queue()
                     }
