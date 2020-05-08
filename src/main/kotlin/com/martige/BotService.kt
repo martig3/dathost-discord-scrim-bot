@@ -22,21 +22,21 @@ class BotService {
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
-        private lateinit var serverIp: String
-        lateinit var serverId: String
+        private lateinit var gameServerIp: String
+        lateinit var gameServerId: String
         var auth64String = "Basic "
         var dmTemplate = "Your scrim server is ready! Paste this into your console:"
-        var roleId: Long = 0
-        var channelId: Long = 0
+        var discordPrivilegeRoleId: Long = 0
+        var discordVoiceChannel: Long = 0
         private var queue: ArrayList<User> = arrayListOf()
         fun init(props: Properties) {
-            serverIp = props.getProperty("serverIp")
-            serverId = props.getProperty("serverId")
+            gameServerIp = props.getProperty("gameServerIp")
+            gameServerId = props.getProperty("gameServerId")
             auth64String += Base64.getEncoder()
                 .encodeToString("${props.getProperty("user")}:${props.getProperty("password")}".toByteArray())
             dmTemplate = props.getProperty("dmTemplate") ?: dmTemplate
-            roleId = props.getProperty("roleId").toLong()
-            channelId = props.getProperty("channelId").toLong()
+            discordPrivilegeRoleId = props.getProperty("discordPrivilegeRoleId").toLong()
+            discordVoiceChannel = props.getProperty("discordVoiceChannel").toLong()
         }
     }
 
@@ -77,7 +77,7 @@ class BotService {
     }
 
     fun startServer(event: MessageReceivedEvent, override: Boolean) {
-        if (!event.guild.getMembersWithRoles(event.guild.getRoleById(roleId)).contains(event.member)) {
+        if (!event.guild.getMembersWithRoles(event.guild.getRoleById(discordPrivilegeRoleId)).contains(event.member)) {
             event.channel.sendMessage("You do not have the correct role to use this command").queue()
             return
         }
@@ -95,21 +95,21 @@ class BotService {
         val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
         val formUrlEncoded: MediaType? = "application/x-www-form-urlencoded; charset=utf-8".toMediaTypeOrNull()
         val changePasswordRequest = Request.Builder()
-            .url("https://dathost.net/api/0.1/game-servers/$serverId")
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId")
             .put("csgo_settings.password=$randomPass".toRequestBody(formUrlEncoded))
             .header("Authorization", auth64String)
             .build()
         val passwordChangeResponse = httpClient.newCall(changePasswordRequest).execute()
         log.info("Server password change response: ${passwordChangeResponse.message}")
         val stopServerRequest = Request.Builder()
-            .url("https://dathost.net/api/0.1/game-servers/$serverId/stop")
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/stop")
             .post("".toRequestBody(json))
             .header("Authorization", auth64String)
             .build()
         val stopServerResponse = httpClient.newCall(stopServerRequest).execute()
         log.info("Server stop response: ${stopServerResponse.message}")
         val startServerRequest = Request.Builder()
-            .url("https://dathost.net/api/0.1/game-servers/$serverId/start")
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/start")
             .post("".toRequestBody(json))
             .header("Authorization", auth64String)
             .build()
@@ -124,7 +124,7 @@ class BotService {
             val serverStateResponse = httpClient.newCall(serverStateRequest).execute()
             val responseBody = serverStateResponse.body?.string() ?: return
             val gameServers = Gson().fromJson<List<DatHostGameServer>>(responseBody)
-            val gameServer = gameServers.first { it.id == serverId }
+            val gameServer = gameServers.first { it.id == gameServerId }
             if (gameServer.booting) {
                 log.info("Server is still booting, waiting 5s...")
                 Thread.sleep(5000)
@@ -141,7 +141,7 @@ class BotService {
             try {
             event.guild.moveVoiceMember(
                 event.guild.getMember(user)!!,
-                event.guild.getVoiceChannelById(channelId)
+                event.guild.getVoiceChannelById(discordVoiceChannel)
             ).queue()
             } catch (e: IllegalStateException) {
                 log.info("${user.name} is not connected to the server")
@@ -156,6 +156,7 @@ class BotService {
     }
 
     fun unknownCommand(event: MessageReceivedEvent) {
+        if (!event.message.contentRaw.startsWith("!")) return
         event.channel.sendMessage("Unknown command, type `!help` for a list of valid commands").queue()
     }
 
@@ -168,7 +169,7 @@ class BotService {
     }
 
     private fun generateTemplate(password: String): String {
-        return "$dmTemplate\n`connect $serverIp;password $password`"
+        return "$dmTemplate\n`connect $gameServerIp;password $password`"
     }
 
     inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)

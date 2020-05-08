@@ -14,7 +14,7 @@ class Bot : ListenerAdapter() {
 
     override fun onMessageReceived(event: MessageReceivedEvent) {
         if (event.author.isBot) return
-        if (event.channel.id != channelId.toString()) return
+        if (event.channel.id != discordTextChannelId.toString()) return
         when (Command.valueOfLabel(event.message.contentStripped.toLowerCase().trim()) ?: Command.UNKNOWN) {
             Command.JOIN -> BotService().addToQueue(event)
             Command.LEAVE -> BotService().removeFromQueue(event)
@@ -29,17 +29,17 @@ class Bot : ListenerAdapter() {
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(Bot::class.java)
-        var channelId: Long = 0
+        var discordTextChannelId: Long = 0
 
         @JvmStatic
         fun main(args: Array<String>) {
             val props = getProps()
-            channelId = props.getProperty("channelId").toLong()
-            val token = props.getProperty("token")
+            discordTextChannelId = props.getProperty("discordTextChannelId").toLong()
+            val botToken = props.getProperty("botToken")
             BotService.init(props)
             JDABuilder
                 .create(
-                    token,
+                    botToken,
                     GatewayIntent.GUILD_MESSAGES,
                     GatewayIntent.GUILD_PRESENCES,
                     GatewayIntent.GUILD_VOICE_STATES,
