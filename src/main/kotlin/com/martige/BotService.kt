@@ -80,7 +80,7 @@ class BotService {
         }
         val stringBuilder = StringBuilder()
             .append("The following users are queued:\n")
-        queue.forEach { stringBuilder.append("- <@${it.id}>\n") }
+        queue.forEach { stringBuilder.append("- @${it.name}\n") }
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
