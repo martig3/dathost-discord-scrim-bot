@@ -78,8 +78,7 @@ class BotService {
             event.channel.sendMessage("The queue is currently empty").queue()
             return
         }
-        val stringBuilder = StringBuilder()
-            .append("The following users are queued: (${queue.size}/10)\n")
+        val stringBuilder = StringBuilder().append("The following users are queued: (${queue.size}/10)\n")
         queue.forEach { stringBuilder.append("- @${it.name}\n") }
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
