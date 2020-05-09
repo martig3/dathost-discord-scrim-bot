@@ -78,8 +78,8 @@ class BotService {
             event.channel.sendMessage("The queue is currently empty").queue()
             return
         }
-        val stringBuilder = StringBuilder().append("The following users are queued: (${queue.size}/10)\n")
-        queue.forEach { stringBuilder.append("- @${it.name}\n") }
+        val stringBuilder = StringBuilder().appendln("The following users are queued: (${queue.size}/10)")
+        queue.forEach { stringBuilder.appendln("- @${it.name}") }
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
@@ -159,8 +159,8 @@ class BotService {
         ).queue()
         if (unconnectedUsers.size > 0) {
             val stringBuilder =
-                StringBuilder().append("The following queued users are not in the discord and cannot be moved to the default scrim voice channel:\n")
-            unconnectedUsers.forEach { stringBuilder.append("- <@${it.id}>") }
+                StringBuilder().appendln("The following queued users are not in the discord and cannot be moved to the default scrim voice channel:")
+            unconnectedUsers.forEach { stringBuilder.appendln("- <@${it.id}>") }
             event.channel.sendMessage(stringBuilder.toString()).queue()
         }
         // cleanup
@@ -174,10 +174,10 @@ class BotService {
     }
 
     fun listCommands(event: MessageReceivedEvent) {
-        val stringBuilder = StringBuilder().append("List of available commands:\n")
+        val stringBuilder = StringBuilder().appendln("List of available commands:")
         Bot.Command.values()
             .filter { it != Bot.Command.UNKNOWN }
-            .forEach { stringBuilder.append("`${it.command}` - ${it.description}\n") }
+            .forEach { stringBuilder.appendln("`${it.command}` - ${it.description}") }
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
