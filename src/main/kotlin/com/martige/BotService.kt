@@ -84,14 +84,20 @@ class BotService {
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
-    fun startServer(event: MessageReceivedEvent, override: Boolean) {
-        if (!event.guild.getMembersWithRoles(event.guild.getRoleById(discordPrivilegeRoleId)).contains(event.member)) {
-            event.channel.sendMessage("You do not have the correct role to use this command").queue()
-            return
+    fun clearQueue(event: MessageReceivedEvent) {
+        if (!isMemberPrivileged(event)) {
+            event.channel.sendMessage("You do not have the correct role for this command").queue()
+        } else {
+            queue.clear()
+            event.channel.sendMessage("Queue cleared").queue()
         }
-        val gameServerOne = firstGameServer(httpClient) ?: return
-        val isEmpty = gameServerOne.players_online == 0
-        if ((queue.size == 10 || override) && isEmpty) {
+    }
+
+    fun startServer(event: MessageReceivedEvent, force: Boolean) {
+        if (!isMemberPrivileged(event) && force) return
+        val gameServer = firstGameServer(httpClient) ?: return
+        val isEmpty = gameServer.players_online == 0
+        if ((queue.size == 10 || force) && isEmpty) {
             event.channel.sendMessage("Starting scrim server...").queue()
         } else {
             if (!isEmpty) event.channel
@@ -111,8 +117,8 @@ class BotService {
         val startServerResponse = startGameServer()
         log.info("Server start response: ${startServerResponse.message}")
         for (x in 0..24) {
-            val gameServer = firstGameServer(httpClient) ?: return
-            if (gameServer.booting) {
+            val gameServerPing = firstGameServer(httpClient) ?: return
+            if (gameServerPing.booting) {
                 log.info("Server is still booting, waiting 5s...")
                 Thread.sleep(5000)
             } else {
@@ -220,6 +226,11 @@ class BotService {
 
     private fun generateTemplate(password: String): String {
         return "$dmTemplate\n`connect $gameServerIp;password $password`"
+    }
+
+    private fun isMemberPrivileged(event: MessageReceivedEvent): Boolean {
+        return event.guild.getMembersWithRoles(event.guild.getRoleById(discordPrivilegeRoleId))
+                .contains(event.member)
     }
 
     inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)
