@@ -14,6 +14,7 @@ The bot must be bound to one discord server and utilizes a specific text channel
 - `!clearqueue` - Clears the active queue (Privileged)
 - `!start` - Start the scrim after the queue is full
 - `!start -override` - Start the scrim even if the queue is not full (Privileged)
+- `!recover` - Recovers queue if bot fails, tag all users after command to add to new queue (privileged)
 - `!help` - generates help message
 
 ## `!start` Sequence
