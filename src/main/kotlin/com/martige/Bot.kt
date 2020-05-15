@@ -21,6 +21,7 @@ class Bot : ListenerAdapter() {
             Command.LIST -> BotService().listQueue(event)
             Command.START -> BotService().startServer(event, false)
             Command.STARTOVERRIDE -> BotService().startServer(event, true)
+            Command.RECOVER -> BotService().recoverQueue(event)
             Command.CLEARQUEUE -> BotService().clearQueue(event)
             Command.HELP -> BotService().listCommands(event)
             Command.UNKNOWN -> BotService().unknownCommand(event)
@@ -68,6 +69,7 @@ class Bot : ListenerAdapter() {
         LIST("!list", "Lists all users in scrim queue"),
         START("!start", "Start the scrim after the queue is full"),
         STARTOVERRIDE("!start -force", "Start the scrim even if the queue is not full (privileged)"),
+        RECOVER("!recover", "Recovers queue if bot fails, tag all users to add to new queue in one message (privileged)"),
         CLEARQUEUE("!clearqueue", "Clears the queue (privileged)"),
         HELP("!help", "What you are currently seeing"),
         UNKNOWN("", "Placeholder for unknown commands");

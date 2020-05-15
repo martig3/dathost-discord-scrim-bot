@@ -168,6 +168,16 @@ class BotService {
         log.info("Startup process has completed successfully")
     }
 
+    fun recoverQueue(event: MessageReceivedEvent) {
+        if (!isMemberPrivileged(event)) {
+            event.channel.sendMessage("You do not have the correct role for this command").queue()
+        }
+        queue.clear()
+        event.message.mentionedMembers.forEach { queue.add(it.user) }
+        event.channel.sendMessage("Successfully recovered queue").queue()
+        listQueue(event)
+    }
+
     fun unknownCommand(event: MessageReceivedEvent) {
         if (!event.message.contentRaw.startsWith("!")) return
         event.channel.sendMessage("Unknown command, type `!help` for a list of valid commands").queue()
@@ -229,7 +239,7 @@ class BotService {
 
     private fun isMemberPrivileged(event: MessageReceivedEvent): Boolean {
         return event.guild.getMembersWithRoles(event.guild.getRoleById(discordPrivilegeRoleId))
-                .contains(event.member)
+            .contains(event.member)
     }
 
     inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)
