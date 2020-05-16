@@ -5,7 +5,7 @@ Simple Discord bot for managing a queue for 10 man scrims in CSGO using DatHost'
 A way to organize 10 man scrims on a DatHost dedicated CSGO server via Discord.
 
 ## Usage
-The bot must be bound to one discord server and utilizes a specific text channel to receive commands. Users type `!join` to enter the queue. Once the queue is full, the `!start` can be executed.
+The bot must be bound to one discord server and utilizes a specific text channel to receive commands. Users type `!join` to enter the queue. Once the queue is full, the `!start` command can be executed.
 
 #### Available Commands
 - `!join` - Join the scrim queue
