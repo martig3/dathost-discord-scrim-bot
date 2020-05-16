@@ -15,8 +15,8 @@ class Bot : ListenerAdapter() {
     override fun onMessageReceived(event: MessageReceivedEvent) {
         if (event.author.isBot) return
         if (event.channel.id != discordTextChannelId.toString()) return
-        val regex = Regex.fromLiteral("^([\\w\\!]+)")
-        when (Command.valueOfLabel(regex.find(event.message.contentStripped.toLowerCase().trim()).toString())
+        val regex = "^([\\w!]+)".toRegex()
+        when (Command.valueOfLabel(regex.find(event.message.contentStripped.toLowerCase().trim())?.value)
             ?: Command.UNKNOWN) {
             Command.JOIN -> BotService().addToQueue(event)
             Command.LEAVE -> BotService().removeFromQueue(event)
