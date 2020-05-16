@@ -15,7 +15,9 @@ class Bot : ListenerAdapter() {
     override fun onMessageReceived(event: MessageReceivedEvent) {
         if (event.author.isBot) return
         if (event.channel.id != discordTextChannelId.toString()) return
-        when (Command.valueOfLabel(event.message.contentStripped.toLowerCase().trim()) ?: Command.UNKNOWN) {
+        val regex = Regex.fromLiteral("^([\\w\\!]+)")
+        when (Command.valueOfLabel(regex.find(event.message.contentStripped.toLowerCase().trim()).toString())
+            ?: Command.UNKNOWN) {
             Command.JOIN -> BotService().addToQueue(event)
             Command.LEAVE -> BotService().removeFromQueue(event)
             Command.LIST -> BotService().listQueue(event)
@@ -69,7 +71,10 @@ class Bot : ListenerAdapter() {
         LIST("!list", "Lists all users in scrim queue"),
         START("!start", "Start the scrim after the queue is full"),
         STARTOVERRIDE("!start -force", "Start the scrim even if the queue is not full (privileged)"),
-        RECOVER("!recover", "Recovers queue if bot fails, tag all users to add to new queue in one message (privileged)"),
+        RECOVER(
+            "!recover",
+            "Recovers queue if bot fails, tag all users to add to new queue in one message (privileged)"
+        ),
         CLEARQUEUE("!clearqueue", "Clears the queue (privileged)"),
         HELP("!help", "What you are currently seeing"),
         UNKNOWN("", "Placeholder for unknown commands");
