@@ -54,8 +54,8 @@ class BotService {
         } else {
             if (!queue.contains(event.author)) {
                 queue.add(event.author)
-                event.channel.sendMessage("<@${event.author.id}> has joined the queue!").queue()
-                event.channel.sendMessage("Queue size: ${queue.size}/10").queue()
+                event.channel.sendMessage("<@${event.author.id}> has joined the queue! Queue size: ${queue.size}/10")
+                    .queue()
             } else {
                 event.channel.sendMessage("<@${event.author.id}> is already in the queue").queue()
             }
@@ -65,8 +65,8 @@ class BotService {
     fun removeFromQueue(event: MessageReceivedEvent) {
         if (queue.contains(event.author)) {
             queue.remove(event.author)
-            event.channel.sendMessage("<@${event.author.id}> has left the queue, see ya!").queue()
-            event.channel.sendMessage("Queue size: ${queue.size}/10").queue()
+            event.channel.sendMessage("<@${event.author.id}> has left the queue, see ya! Queue size ${queue.size}/10")
+                .queue()
         } else {
             event.channel.sendMessage("Hey <@${event.author.id}>, you're not in the queue. Type `!join` to queue")
                 .queue()
@@ -86,10 +86,10 @@ class BotService {
     fun clearQueue(event: MessageReceivedEvent) {
         if (!isMemberPrivileged(event)) {
             event.channel.sendMessage("You do not have the correct role for this command").queue()
-        } else {
-            queue.clear()
-            event.channel.sendMessage("Queue cleared").queue()
+            return
         }
+        queue.clear()
+        event.channel.sendMessage("Queue cleared").queue()
     }
 
     fun startServer(event: MessageReceivedEvent, force: Boolean) {
@@ -171,6 +171,7 @@ class BotService {
     fun recoverQueue(event: MessageReceivedEvent) {
         if (!isMemberPrivileged(event)) {
             event.channel.sendMessage("You do not have the correct role for this command").queue()
+            return
         }
         queue.clear()
         event.message.mentionedMembers.forEach { queue.add(it.user) }
