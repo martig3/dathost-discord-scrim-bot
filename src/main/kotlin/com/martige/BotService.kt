@@ -3,6 +3,9 @@ package com.martige
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.martige.model.DatHostGameServer
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import net.dv8tion.jda.api.MessageBuilder
 import net.dv8tion.jda.api.entities.User
 import net.dv8tion.jda.api.entities.VoiceChannel
@@ -19,34 +22,23 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 
 
-class BotService {
-
-    companion object {
-        private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
-        private lateinit var gameServerIp: String
-        lateinit var gameServerId: String
-        var auth64String = "Basic "
-        var dmTemplate = "Your scrim server is ready! Paste this into your console:"
-        var discordPrivilegeRoleId: Long = 0
-        var discordVoiceChannelId: Long = 0
-        private var queue: ArrayList<User> = arrayListOf()
-        val httpClient = OkHttpClient.Builder()
-            .readTimeout(30, TimeUnit.SECONDS)
-            .build()
-
-        fun init(props: Properties) {
-            gameServerIp = props.getProperty("gameserver.ip")
-            gameServerId = props.getProperty("gameserver.id")
-            auth64String += Base64.getEncoder()
-                .encodeToString(
-                    "${props.getProperty("dathost.username")}:${props.getProperty("dathost.password")}"
-                        .toByteArray()
-                )
-            dmTemplate = props.getProperty("dm.template") ?: dmTemplate
-            discordPrivilegeRoleId = props.getProperty("discord.role.privilege.id").toLong()
-            discordVoiceChannelId = props.getProperty("discord.voicechannel.id").toLong()
-        }
-    }
+class BotService(props: Properties) {
+    private var gameServerIp: String = props.getProperty("gameserver.ip")
+    private var gameServerId = props.getProperty("gameserver.id")
+    private var auth64String = "Basic " + Base64.getEncoder()
+        .encodeToString(
+            "${props.getProperty("dathost.username")}:${props.getProperty("dathost.password")}"
+                .toByteArray()
+        )
+    private var dmTemplate =
+        props.getProperty("dm.template") ?: "Your scrim server is ready! Paste this into your console:"
+    private var discordPrivilegeRoleId = props.getProperty("discord.role.privilege.id").toLong()
+    private var discordVoiceChannelId = props.getProperty("discord.voicechannel.id").toLong()
+    private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
+    private var queue: ArrayList<User> = arrayListOf()
+    private val httpClient = OkHttpClient.Builder()
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     fun addToQueue(event: MessageReceivedEvent) {
         if (queue.size == 10) {
@@ -100,7 +92,7 @@ class BotService {
             event.channel.sendMessage("Starting scrim server...").queue()
         } else {
             if (!isEmpty) event.channel
-                .sendMessage("Yo, <@${event.author.id}> I cant start the server it's not empty")
+                .sendMessage("Yo, <@${event.author.id}> I cant start the server because it's not empty")
                 .queue()
             else
                 event.channel
@@ -115,57 +107,55 @@ class BotService {
         log.info("Server stop response: ${stopServerResponse.message}")
         val startServerResponse = startGameServer()
         log.info("Server start response: ${startServerResponse.message}")
-        for (x in 0..24) {
-            val gameServerPing = firstGameServer(httpClient) ?: return
-            if (gameServerPing.booting) {
-                log.info("Server is still booting, waiting 5s...")
-                Thread.sleep(5000)
-            } else {
-                log.info("Server has booted")
-                break
-            }
-        }
-        queue.forEach { user ->
-            user.openPrivateChannel()
-                .queue { privateChannel -> privateChannel.sendMessage(generateTemplate(randomPass)).queue() }
-        }
-        val unconnectedUsers: ArrayList<User> = arrayListOf()
-        queue.forEach { user ->
-            val channel: VoiceChannel? = event.guild.voiceChannels
-                .firstOrNull { voiceChannel ->
-                    voiceChannel.members.firstOrNull { member -> member.user.idLong == user.idLong } != null
+        GlobalScope.launch {
+            for (x in 0..24) {
+                val gameServerPing = firstGameServer(httpClient) ?: return@launch
+                if (gameServerPing.booting) {
+                    log.info("Server is still booting, waiting 5s...")
+                    delay(5000)
+                } else {
+                    log.info("Server has booted")
+                    break
                 }
-            if (channel != null) {
-                event.guild.moveVoiceMember(
-                    event.guild.getMember(user)!!,
-                    event.guild.getVoiceChannelById(discordVoiceChannelId)
-                ).queue()
-            } else {
-                unconnectedUsers.add(user)
-                user.openPrivateChannel()
-                    .queue { privateChannel ->
-                        privateChannel.sendMessage(
-                            "Please connect to the `${event.guild.name} > ${event.guild.getVoiceChannelById(
-                                discordVoiceChannelId
-                            )?.name}` voice channel"
-                        ).queue()
-                    }
             }
+            queue.forEach { user ->
+                user.openPrivateChannel()
+                    .queue { privateChannel -> privateChannel.sendMessage(generateTemplate(randomPass)).queue() }
+            }
+            val unconnectedUsers: ArrayList<User> = arrayListOf()
+            queue.forEach { user ->
+                val channel: VoiceChannel? = event.guild.voiceChannels
+                    .firstOrNull { voiceChannel ->
+                        voiceChannel.members.firstOrNull { member -> member.user.idLong == user.idLong } != null
+                    }
+                if (channel != null) {
+                    event.guild.moveVoiceMember(
+                        event.guild.getMember(user)!!,
+                        event.guild.getVoiceChannelById(discordVoiceChannelId)
+                    ).queue()
+                } else {
+                    unconnectedUsers.add(user)
+                    user.openPrivateChannel()
+                        .queue { privateChannel ->
+                            privateChannel.sendMessage(
+                                "Please connect to the `${event.guild.name} > ${event.guild.getVoiceChannelById(
+                                    discordVoiceChannelId
+                                )?.name}` voice channel"
+                            ).queue()
+                        }
+                }
+            }
+            if (unconnectedUsers.size > 0) {
+                val stringBuilder =
+                    StringBuilder().appendln("The following queued users are not in the discord and cannot be moved to the default scrim voice channel:")
+                unconnectedUsers.forEach { stringBuilder.appendln("- <@${it.id}>") }
+                event.channel.sendMessage(stringBuilder.toString()).queue()
+            }
+            // cleanup
+            queue.clear()
+            log.info("Startup process has completed successfully")
         }
-        event.channel.sendMessage(
-            MessageBuilder().append("Moved queued users to the scrim channel, your scrim is starting")
-                .setTTS(true)
-                .build()
-        ).queue()
-        if (unconnectedUsers.size > 0) {
-            val stringBuilder =
-                StringBuilder().appendln("The following queued users are not in the discord and cannot be moved to the default scrim voice channel:")
-            unconnectedUsers.forEach { stringBuilder.appendln("- <@${it.id}>") }
-            event.channel.sendMessage(stringBuilder.toString()).queue()
-        }
-        // cleanup
-        queue.clear()
-        log.info("Startup process has completed successfully")
+
     }
 
     fun recoverQueue(event: MessageReceivedEvent) {
@@ -243,6 +233,6 @@ class BotService {
             .contains(event.member)
     }
 
-    inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)
+    private inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)
 
 }

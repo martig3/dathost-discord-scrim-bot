@@ -18,29 +18,28 @@ class Bot : ListenerAdapter() {
         val regex = "^([\\w!]+)".toRegex()
         when (Command.valueOfLabel(regex.find(event.message.contentStripped.toLowerCase().trim())?.value)
             ?: Command.UNKNOWN) {
-            Command.JOIN -> BotService().addToQueue(event)
-            Command.LEAVE -> BotService().removeFromQueue(event)
-            Command.LIST -> BotService().listQueue(event)
-            Command.START -> BotService().startServer(event, false)
-            Command.STARTOVERRIDE -> BotService().startServer(event, true)
-            Command.RECOVER -> BotService().recoverQueue(event)
-            Command.CLEARQUEUE -> BotService().clearQueue(event)
-            Command.HELP -> BotService().listCommands(event)
-            Command.UNKNOWN -> BotService().unknownCommand(event)
+            Command.JOIN -> BotService(props).addToQueue(event)
+            Command.LEAVE -> BotService(props).removeFromQueue(event)
+            Command.LIST -> BotService(props).listQueue(event)
+            Command.START -> BotService(props).startServer(event, false)
+            Command.STARTOVERRIDE -> BotService(props).startServer(event, true)
+            Command.RECOVER -> BotService(props).recoverQueue(event)
+            Command.CLEARQUEUE -> BotService(props).clearQueue(event)
+            Command.HELP -> BotService(props).listCommands(event)
+            Command.UNKNOWN -> BotService(props).unknownCommand(event)
         }
     }
 
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(Bot::class.java)
-        var discordTextChannelId: Long = 0
+        private var props = getProps()
+        var discordTextChannelId: Long = props.getProperty("discord.textchannel.id").toLong()
 
         @JvmStatic
         fun main(args: Array<String>) {
-            val props = getProps()
-            discordTextChannelId = props.getProperty("discord.textchannel.id").toLong()
             val botToken = props.getProperty("bot.token")
-            BotService.init(props)
+            BotService(props)
             JDABuilder
                 .create(
                     botToken,
