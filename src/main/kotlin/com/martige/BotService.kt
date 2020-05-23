@@ -1,12 +1,15 @@
 package com.martige
 
+import com.dropbox.core.DbxRequestConfig
+import com.dropbox.core.v2.DbxClientV2
+import com.dropbox.core.v2.files.FileMetadata
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.martige.model.DatHostGameServer
+import com.martige.model.DatHostPathsItem
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import net.dv8tion.jda.api.MessageBuilder
 import net.dv8tion.jda.api.entities.User
 import net.dv8tion.jda.api.entities.VoiceChannel
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
@@ -18,6 +21,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.io.FileInputStream
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -39,6 +43,9 @@ class BotService(props: Properties) {
     private val httpClient = OkHttpClient.Builder()
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+    private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/java-tutorial").build()
+    private var dropboxClient: DbxClientV2 = DbxClientV2(config, props.getProperty("token.dropbox"))
+    private var dropboxDemosFolder = props.getProperty("dropbox.demofolder")
 
     fun addToQueue(event: MessageReceivedEvent) {
         if (queue.size == 10) {
@@ -86,7 +93,7 @@ class BotService(props: Properties) {
 
     fun startServer(event: MessageReceivedEvent, force: Boolean) {
         if (!isMemberPrivileged(event) && force) return
-        val gameServer = firstGameServer(httpClient) ?: return
+        val gameServer = findGameServerById(httpClient, gameServerId) ?: return
         val isEmpty = gameServer.players_online == 0
         if ((queue.size == 10 || force) && isEmpty) {
             event.channel.sendMessage("Starting scrim server...").queue()
@@ -109,7 +116,7 @@ class BotService(props: Properties) {
         log.info("Server start response: ${startServerResponse.message}")
         GlobalScope.launch {
             for (x in 0..24) {
-                val gameServerPing = firstGameServer(httpClient) ?: return@launch
+                val gameServerPing = findGameServerById(httpClient, gameServerId) ?: return@launch
                 if (gameServerPing.booting) {
                     log.info("Server is still booting, waiting 5s...")
                     delay(5000)
@@ -182,7 +189,7 @@ class BotService(props: Properties) {
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
-    private fun firstGameServer(httpClient: OkHttpClient): DatHostGameServer? {
+    private fun findGameServerById(httpClient: OkHttpClient, gameServerId: String): DatHostGameServer? {
         val serverStateRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers")
             .get()
@@ -224,6 +231,18 @@ class BotService(props: Properties) {
         return httpClient.newCall(startServerRequest).execute()
     }
 
+    private fun listGameServerFiles(path: String = ""): List<DatHostPathsItem>? {
+        val listGameServerFilesRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files")
+            .get()
+            .header("Authorization", auth64String)
+            .addHeader("path", path)
+            .build()
+        val serverStateResponse = httpClient.newCall(listGameServerFilesRequest).execute()
+        val responseBody = serverStateResponse.body?.string() ?: return null
+        return Gson().fromJson<List<DatHostPathsItem>>(responseBody)
+    }
+
     private fun generateTemplate(password: String): String {
         return "$dmTemplate\n`connect $gameServerIp;password $password`"
     }
@@ -231,6 +250,26 @@ class BotService(props: Properties) {
     private fun isMemberPrivileged(event: MessageReceivedEvent): Boolean {
         return event.guild.getMembersWithRoles(event.guild.getRoleById(discordPrivilegeRoleId))
             .contains(event.member)
+    }
+
+    fun enableDemoUpload() {
+        GlobalScope.launch {
+            delay(60000)
+            while (false) {
+                val rootFiles = listGameServerFiles() ?: listOf()
+                rootFiles.filter { it.path.endsWith(".dem") }
+                val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
+                val filesToUpload =
+                    rootFiles.filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
+                // todo actually get the file from game server
+                filesToUpload.forEach{
+                    FileInputStream("test.txt").use { `in` ->
+                        dropboxClient.files().uploadBuilder("$dropboxDemosFolder/${it.path}")
+                            .uploadAndFinish(`in`)
+                    }
+                }
+            }
+        }
     }
 
     private inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)

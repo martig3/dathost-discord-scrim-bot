@@ -39,7 +39,7 @@ class Bot : ListenerAdapter() {
         @JvmStatic
         fun main(args: Array<String>) {
             val botToken = props.getProperty("bot.token")
-            BotService(props)
+            BotService(props).enableDemoUpload()
             JDABuilder
                 .create(
                     botToken,
