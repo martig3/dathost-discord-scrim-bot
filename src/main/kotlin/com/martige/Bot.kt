@@ -72,7 +72,7 @@ class Bot : ListenerAdapter() {
         JOIN("!join", "Join the scrim queue"),
         LEAVE("!leave", "Leave the scrim queue"),
         LIST("!list", "Lists all users in scrim queue"),
-        START("!start", "Start the scrim after the queue is full. Add `-force` to force start (privileged argument)"),
+        START("!start", "Start the scrim after the queue is full"),
         RECOVER("!recover", "Tag all users after command to create new queue (privileged)"),
         CLEARQUEUE("!clearqueue", "Clears the queue (privileged)"),
         HELP("!help", "What you are currently seeing"),
