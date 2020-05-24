@@ -34,7 +34,7 @@ class Bot : ListenerAdapter() {
         private val log: Logger = LoggerFactory.getLogger(Bot::class.java)
         private var props = loadProps()
         var discordTextChannelId: Long = props.getProperty("discord.textchannel.id").toLong()
-        private val enableDemUpload = props.getProperty("dropbox.upload") ?: "true"
+        private val enableDemUpload = props.getProperty("dropbox.upload") ?: "false"
         lateinit var botService: BotService
 
         @JvmStatic
@@ -55,7 +55,7 @@ class Bot : ListenerAdapter() {
                 .build()
             botService = BotService(props, jda)
             if (enableDemUpload.toBoolean()) botService.enableDemoUpload()
-            log.info("JDA Build Successful, BOT Running")
+            log.info("JDA Build Successful")
         }
 
         private fun loadProps(): Properties {
@@ -70,7 +70,7 @@ class Bot : ListenerAdapter() {
         JOIN("!join", "Join the scrim queue"),
         LEAVE("!leave", "Leave the scrim queue"),
         LIST("!list", "Lists all users in scrim queue"),
-        START("!start", "Start the scrim after the queue is full. Add \"-force\" to force start (privileged argument)"),
+        START("!start", "Start the scrim after the queue is full. Add `-force` to force start (privileged argument)"),
         RECOVER("!recover", "Tag all users after command to create new queue (privileged)"),
         CLEARQUEUE("!clearqueue", "Clears the queue (privileged)"),
         HELP("!help", "What you are currently seeing"),

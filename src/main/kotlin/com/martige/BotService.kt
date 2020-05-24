@@ -265,6 +265,7 @@ class BotService(props: Properties, private var jda: JDA) {
     }
 
     fun enableDemoUpload() {
+        log.info("Started demo upload feature")
         GlobalScope.launch {
             while (true) {
                 delay(60000)
