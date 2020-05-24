@@ -2,7 +2,6 @@ package com.martige
 
 import com.dropbox.core.DbxRequestConfig
 import com.dropbox.core.v2.DbxClientV2
-import com.dropbox.core.v2.files.FileMetadata
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.martige.model.DatHostGameServer
@@ -10,6 +9,7 @@ import com.martige.model.DatHostPathsItem
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.entities.User
 import net.dv8tion.jda.api.entities.VoiceChannel
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
@@ -21,12 +21,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.io.FileInputStream
+import java.io.InputStream
 import java.util.*
 import java.util.concurrent.TimeUnit
 
 
-class BotService(props: Properties) {
+class BotService(props: Properties, private var jda: JDA) {
     private var gameServerIp: String = props.getProperty("gameserver.ip")
     private var gameServerId = props.getProperty("gameserver.id")
     private var auth64String = "Basic " + Base64.getEncoder()
@@ -38,14 +38,15 @@ class BotService(props: Properties) {
         props.getProperty("dm.template") ?: "Your scrim server is ready! Paste this into your console:"
     private var discordPrivilegeRoleId = props.getProperty("discord.role.privilege.id").toLong()
     private var discordVoiceChannelId = props.getProperty("discord.voicechannel.id").toLong()
+    private var discordTextChannelId: Long = props.getProperty("discord.textchannel.id").toLong()
     private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
     private var queue: ArrayList<User> = arrayListOf()
     private val httpClient = OkHttpClient.Builder()
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
-    private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/java-tutorial").build()
-    private var dropboxClient: DbxClientV2 = DbxClientV2(config, props.getProperty("token.dropbox"))
-    private var dropboxDemosFolder = props.getProperty("dropbox.demofolder")
+    private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/mert-scrim-bot").build()
+    private var dropboxClient: DbxClientV2 = DbxClientV2(config, props.getProperty("dropbox.token"))
+    private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder")
 
     fun addToQueue(event: MessageReceivedEvent) {
         if (queue.size == 10) {
@@ -243,6 +244,16 @@ class BotService(props: Properties) {
         return Gson().fromJson<List<DatHostPathsItem>>(responseBody)
     }
 
+    private fun getFile(path: String): InputStream? {
+        val getFileRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files/$path")
+            .get()
+            .header("Authorization", auth64String)
+            .build()
+        val serverStateResponse = httpClient.newCall(getFileRequest).execute()
+        return serverStateResponse.body?.byteStream() ?: return null
+    }
+
     private fun generateTemplate(password: String): String {
         return "$dmTemplate\n`connect $gameServerIp;password $password`"
     }
@@ -254,20 +265,23 @@ class BotService(props: Properties) {
 
     fun enableDemoUpload() {
         GlobalScope.launch {
-            delay(60000)
             while (false) {
+                delay(60000)
                 val rootFiles = listGameServerFiles() ?: listOf()
                 rootFiles.filter { it.path.endsWith(".dem") }
                 val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
                 val filesToUpload =
                     rootFiles.filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
-                // todo actually get the file from game server
-                filesToUpload.forEach{
-                    FileInputStream("test.txt").use { `in` ->
+                filesToUpload.forEach {
+                    val file = getFile(it.path)
+                    file.use { `in` ->
                         dropboxClient.files().uploadBuilder("$dropboxDemosFolder/${it.path}")
                             .uploadAndFinish(`in`)
                     }
                 }
+                val shareLink = dropboxClient.sharing().createSharedLinkWithSettings(dropboxDemosFolder)
+                val channel = jda.getTextChannelById(discordTextChannelId)
+                channel?.sendMessage("New `.dem` replay files are available here: ${shareLink.url}")
             }
         }
     }
