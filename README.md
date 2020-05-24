@@ -43,6 +43,8 @@ _Note: Discord ids can be accessed by enabling developer mode_
 - `discord.voicechannel.id` - a default voice channel to pull users in once the server has started up
 - `discord.textchannel.id` - the channel that listens for commands
 - `bot.token` - the bot token
+- `bot.autoclear` - _(Optional)_ enables auto-clearing of queue. Defaults to `false`
+- `bot.autoclear.hourofday` - _(Optional)_ specify the hour of day to autoclear queue (in 24h format). Defaults to `7`
 - `dropbox.upload` - _(Optional)_ enables the dropbox `.dem` replay files integration. Defaults to `false`
 - `dropbox.token` - _(Optional)_ your dropbox api token
 - `dropbox.sharedfolder` - _(Optional)_ use only if your dropbox app has been configured to access all of your directories, although that is recommended for this use case
@@ -56,5 +58,7 @@ discord.role.privilege.id=269231231231947290082
 discord.voicechannel.id=442712312414804316
 discord.textchannel.id=696363464140812447
 bot.token=NM354711923Nj123TM1.SFSxA.RzAgGHS41231kONw1qYSe6FQUHJCsM
+bot.autoclear=true
+bot.autoclear.hourofday=7
 dropbox.upload=true
 dropbox.token=DlQlJm5kf-gAAAAAAAAmwzNYgNDpIQsgCO7-OoJfFTZFlMTMih7hoiIB7dMXs9Ea

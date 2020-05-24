@@ -35,6 +35,7 @@ class Bot : ListenerAdapter() {
         private var props = loadProps()
         var discordTextChannelId: Long = props.getProperty("discord.textchannel.id").toLong()
         private val enableDemUpload = props.getProperty("dropbox.upload") ?: "false"
+        private val enableAutoClearQueue = props.getProperty("bot.autoclear") ?: "false"
         lateinit var botService: BotService
 
         @JvmStatic
@@ -55,6 +56,7 @@ class Bot : ListenerAdapter() {
                 .build()
             botService = BotService(props, jda)
             if (enableDemUpload.toBoolean()) botService.enableDemoUpload()
+            if (enableAutoClearQueue.toBoolean()) botService.enableAutoClearQueue()
             log.info("JDA Build Successful")
         }
 
