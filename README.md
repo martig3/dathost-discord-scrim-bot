@@ -12,7 +12,7 @@ The bot must be bound to one discord server and utilizes a specific text channel
 - `!leave` - Leave the scrim queue
 - `!list` - Lists all users in scrim queue
 - `!clearqueue` - Clears the active queue (Privileged)
-- `!start` - Start the scrim after the queue is full. Add `-force` force start (privileged argument)
+- `!start` - Start the scrim after the queue is full. Add `-force` force start (Privileged Argument)
 - `!recover` - Tag all users after command to create a new queue (Privileged)
 - `!help` - generates help message
 
@@ -27,7 +27,10 @@ The bot must be bound to one discord server and utilizes a specific text channel
 - Clears queue
 
 ## Dropbox Integration
-This bot will automatically upload `.dem` replay files stored on your game server if the `dropbox.token` property has been set to `true`. It is recommended to set up your dropbox app to only use one folder for the sake of simplicity.
+This bot will automatically upload `.dem` replay files stored on your game server if the `dropbox.upload` property has been set to `true` & the `dropbox.token` property has been defined. It is recommended to set up your dropbox "app" to only use one folder for the sake of simplicity. See dropbox API documentation on how to obtain an API token.
+
+#### `.dem` Replay File Requirements
+The bot will generate a message after uploading `.dem` files to the default text channel defined by `discord.textchannel.id`. Any files ending in `.dem` will be uploaded. For the generated message to display the map info correctly, the file must contain the map name somewhere in the file name in the following format: `_de_<mapname>_` _i.e._ `_de_inferno_`. Sourcemod scrim plugins such as [csgo-pug-setup](https://github.com/splewis/csgo-pug-setup) automatically add this info to the filename.
 
 ## Setup
 This repo currently does not have any CI/CD, to run please clone & create a `bot.properties` file in the root directory & use `gradle run`. See an example of the `bot.properties` below.
@@ -46,7 +49,7 @@ _Note: Discord ids can be accessed by enabling developer mode_
 - `bot.autoclear` - _(Optional)_ enables auto-clearing of queue. Defaults to `false`
 - `bot.autoclear.hourofday` - _(Optional)_ specify the hour of day to autoclear queue (in 24h format). Defaults to `7`
 - `dropbox.upload` - _(Optional)_ enables the dropbox `.dem` replay files integration. Defaults to `false`
-- `dropbox.token` - _(Optional)_ your dropbox api token
+- `dropbox.token` - _(Optional)_ your dropbox API token
 - `dropbox.sharedfolder` - _(Optional)_ use only if your dropbox app has been configured to access all of your directories, although that is recommended for this use case
 ### `bot.properties` Example
 ```gameserver.ip=example-domain.datho.st:28453
