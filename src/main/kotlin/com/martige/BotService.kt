@@ -44,7 +44,7 @@ class BotService(props: Properties, private var jda: JDA) {
     private val httpClient = OkHttpClient.Builder()
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
-    private var autoclearHour = props.getProperty("bot.autoclear.hourofday").toInt()
+    private var autoclearHour = props.getProperty("bot.autoclear.hourofday") ?: "7"
     private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/mert-scrim-bot").build()
     private lateinit var dropboxClient: DbxClientV2
     private var dropboxToken = props.getProperty("dropbox.token")
@@ -316,17 +316,18 @@ class BotService(props: Properties, private var jda: JDA) {
 
     fun enableAutoClearQueue() {
         log.info("Started autoclear queue feature")
+        val hour = autoclearHour.toInt()
         GlobalScope.launch {
             while (true) {
                 val currentDate = Date()
                 val clearTime = Calendar.getInstance()
                 clearTime.timeZone = TimeZone.getDefault()
-                clearTime.set(Calendar.HOUR_OF_DAY, autoclearHour)
+                clearTime.set(Calendar.HOUR_OF_DAY, hour)
                 clearTime.set(Calendar.MINUTE, 0)
                 clearTime.set(Calendar.SECOND, 0)
                 if (clearTime.before(currentDate)) {
                     clearTime.add(Calendar.DATE, 1)
-                    clearTime.set(Calendar.HOUR_OF_DAY, autoclearHour)
+                    clearTime.set(Calendar.HOUR_OF_DAY, hour)
                     clearTime.set(Calendar.MINUTE, 0)
                     clearTime.set(Calendar.SECOND, 0)
                 }
