@@ -44,8 +44,10 @@ class BotService(props: Properties, private var jda: JDA) {
     private val httpClient = OkHttpClient.Builder()
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+    private var autoclearHour = props.getProperty("bot.autoclear.hourofday").toInt()
     private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/mert-scrim-bot").build()
-    private var dropboxClient: DbxClientV2 = DbxClientV2(config, props.getProperty("dropbox.token"))
+    private lateinit var dropboxClient: DbxClientV2
+    private var dropboxToken = props.getProperty("dropbox.token")
     private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
 
     fun addToQueue(event: MessageReceivedEvent) {
@@ -278,6 +280,7 @@ class BotService(props: Properties, private var jda: JDA) {
     }
 
     fun enableDemoUpload() {
+        dropboxClient = DbxClientV2(config, dropboxToken)
         log.info("Started demo upload feature")
         GlobalScope.launch {
             while (true) {
@@ -306,6 +309,35 @@ class BotService(props: Properties, private var jda: JDA) {
                     }
                     val channel = jda.getTextChannelById(discordTextChannelId)
                     channel?.sendMessage(stringBuilder)?.queue()
+                }
+            }
+        }
+    }
+
+    fun enableAutoClearQueue() {
+        log.info("Started autoclear queue feature")
+        GlobalScope.launch {
+            while (true) {
+                val currentDate = Date()
+                val clearTime = Calendar.getInstance()
+                clearTime.timeZone = TimeZone.getDefault()
+                clearTime.set(Calendar.HOUR_OF_DAY, autoclearHour)
+                clearTime.set(Calendar.MINUTE, 0)
+                clearTime.set(Calendar.SECOND, 0)
+                if (clearTime.before(currentDate)) {
+                    clearTime.add(Calendar.DATE, 1)
+                    clearTime.set(Calendar.HOUR_OF_DAY, autoclearHour)
+                    clearTime.set(Calendar.MINUTE, 0)
+                    clearTime.set(Calendar.SECOND, 0)
+                }
+                val msBetween = clearTime.time.toInstant().toEpochMilli() - currentDate.toInstant().toEpochMilli()
+                delay(msBetween)
+                val channel = jda.getTextChannelById(discordTextChannelId) ?: return@launch
+                if (queue.size > 0) {
+                    channel.sendMessage("Auto-clearing queue in 2 min").queue()
+                    delay(2000)
+                    queue.clear()
+                    channel.sendMessage("Queue has been auto-cleared").queue()
                 }
             }
         }
