@@ -111,11 +111,11 @@ class BotService(props: Properties, private var jda: JDA) {
         }
         val randomPass = Math.random().toString().replace("0.", "")
         val passwordChangeResponse = changeGameServerPassword(randomPass)
-        log.info("Server password change response: ${passwordChangeResponse.message}")
+        log.info("Server password change response: $passwordChangeResponse")
         val stopServerResponse = stopGameServer()
-        log.info("Server stop response: ${stopServerResponse.message}")
+        log.info("Server stop response: $stopServerResponse")
         val startServerResponse = startGameServer()
-        log.info("Server start response: ${startServerResponse.message}")
+        log.info("Server start response: $startServerResponse")
         GlobalScope.launch {
             for (x in 0..24) {
                 val gameServerPing = findGameServerById(httpClient, gameServerId) ?: return@launch
@@ -199,38 +199,48 @@ class BotService(props: Properties, private var jda: JDA) {
             .build()
         val serverStateResponse = httpClient.newCall(serverStateRequest).execute()
         val responseBody = serverStateResponse.body?.string() ?: return null
+        serverStateResponse.close()
         val gameServers = Gson().fromJson<List<DatHostGameServer>>(responseBody)
         return gameServers.first { it.id == gameServerId }
     }
 
-    private fun changeGameServerPassword(password: String): Response {
+    private fun changeGameServerPassword(password: String): String {
         val formUrlEncoded: MediaType? = "application/x-www-form-urlencoded; charset=utf-8".toMediaTypeOrNull()
         val changePasswordRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId")
             .put("csgo_settings.password=$password".toRequestBody(formUrlEncoded))
             .header("Authorization", auth64String)
             .build()
-        return httpClient.newCall(changePasswordRequest).execute()
+        val response = httpClient.newCall(changePasswordRequest).execute()
+        val message = response.message
+        response.close()
+        return message
     }
 
-    private fun stopGameServer(): Response {
+    private fun stopGameServer(): String{
         val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
         val stopServerRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/stop")
             .post("".toRequestBody(json))
             .header("Authorization", auth64String)
             .build()
-        return httpClient.newCall(stopServerRequest).execute()
+        val response = httpClient.newCall(stopServerRequest).execute()
+        val message = response.message
+        response.close()
+        return message
     }
 
-    private fun startGameServer(): Response {
+    private fun startGameServer(): String {
         val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
         val startServerRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/start")
             .post("".toRequestBody(json))
             .header("Authorization", auth64String)
             .build()
-        return httpClient.newCall(startServerRequest).execute()
+        val response = httpClient.newCall(startServerRequest).execute()
+        val message = response.message
+        response.close()
+        return message
     }
 
     private fun listGameServerFiles(path: String = ""): List<DatHostPathsItem>? {
@@ -242,6 +252,7 @@ class BotService(props: Properties, private var jda: JDA) {
             .build()
         val serverStateResponse = httpClient.newCall(listGameServerFilesRequest).execute()
         val responseBody = serverStateResponse.body?.string() ?: return null
+        serverStateResponse.close()
         return Gson().fromJson<List<DatHostPathsItem>>(responseBody)
     }
 
@@ -251,8 +262,10 @@ class BotService(props: Properties, private var jda: JDA) {
             .get()
             .header("Authorization", auth64String)
             .build()
-        val serverStateResponse = httpClient.newCall(getFileRequest).execute()
-        return serverStateResponse.body?.byteStream() ?: return null
+        val getFileResponse = httpClient.newCall(getFileRequest).execute()
+        val body = getFileResponse.body?.byteStream() ?: return null
+        getFileResponse.close()
+        return body
     }
 
     private fun generateTemplate(password: String): String {
