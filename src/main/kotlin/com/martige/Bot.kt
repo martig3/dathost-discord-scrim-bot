@@ -18,30 +18,29 @@ class Bot : ListenerAdapter() {
         val regex = "^([\\w!]+)".toRegex()
         when (Command.valueOfLabel(regex.find(event.message.contentStripped.toLowerCase().trim())?.value)
             ?: Command.UNKNOWN) {
-            Command.JOIN -> BotService().addToQueue(event)
-            Command.LEAVE -> BotService().removeFromQueue(event)
-            Command.LIST -> BotService().listQueue(event)
-            Command.START -> BotService().startServer(event, false)
-            Command.STARTOVERRIDE -> BotService().startServer(event, true)
-            Command.RECOVER -> BotService().recoverQueue(event)
-            Command.CLEARQUEUE -> BotService().clearQueue(event)
-            Command.HELP -> BotService().listCommands(event)
-            Command.UNKNOWN -> BotService().unknownCommand(event)
+            Command.JOIN -> botService.addToQueue(event)
+            Command.LEAVE -> botService.removeFromQueue(event)
+            Command.LIST -> botService.listQueue(event)
+            Command.START -> botService.startServer(event)
+            Command.RECOVER -> botService.recoverQueue(event)
+            Command.CLEARQUEUE -> botService.clearQueue(event)
+            Command.HELP -> botService.listCommands(event)
+            Command.UNKNOWN -> botService.unknownCommand(event)
         }
     }
 
 
     companion object {
         private val log: Logger = LoggerFactory.getLogger(Bot::class.java)
-        var discordTextChannelId: Long = 0
+        private var props = loadProps()
+        var discordTextChannelId: Long = props.getProperty("discord.textchannel.id").toLong()
+        private val enableDemUpload = props.getProperty("dropbox.upload") ?: "false"
+        lateinit var botService: BotService
 
         @JvmStatic
         fun main(args: Array<String>) {
-            val props = getProps()
-            discordTextChannelId = props.getProperty("discord.textchannel.id").toLong()
             val botToken = props.getProperty("bot.token")
-            BotService.init(props)
-            JDABuilder
+            val jda = JDABuilder
                 .create(
                     botToken,
                     GatewayIntent.GUILD_MESSAGES,
@@ -54,10 +53,12 @@ class Bot : ListenerAdapter() {
                 .setMemberCachePolicy(MemberCachePolicy.ONLINE)
                 .addEventListeners(Bot())
                 .build()
-            log.info("JDA Build Successful, BOT Running")
+            botService = BotService(props, jda)
+            if (enableDemUpload.toBoolean()) botService.enableDemoUpload()
+            log.info("JDA Build Successful")
         }
 
-        private fun getProps(): Properties {
+        private fun loadProps(): Properties {
             val props = Properties()
             props.load(FileInputStream("bot.properties"))
             return props
@@ -69,9 +70,8 @@ class Bot : ListenerAdapter() {
         JOIN("!join", "Join the scrim queue"),
         LEAVE("!leave", "Leave the scrim queue"),
         LIST("!list", "Lists all users in scrim queue"),
-        START("!start", "Start the scrim after the queue is full"),
-        STARTOVERRIDE("!start -force", "Start the scrim even if the queue is not full (privileged)"),
-        RECOVER( "!recover", "Tag all users after command to create new queue (privileged)"),
+        START("!start", "Start the scrim after the queue is full. Add `-force` to force start (privileged argument)"),
+        RECOVER("!recover", "Tag all users after command to create new queue (privileged)"),
         CLEARQUEUE("!clearqueue", "Clears the queue (privileged)"),
         HELP("!help", "What you are currently seeing"),
         UNKNOWN("", "Placeholder for unknown commands");

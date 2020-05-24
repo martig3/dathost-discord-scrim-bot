@@ -1,9 +1,15 @@
 package com.martige
 
+import com.dropbox.core.DbxRequestConfig
+import com.dropbox.core.v2.DbxClientV2
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.martige.model.DatHostGameServer
-import net.dv8tion.jda.api.MessageBuilder
+import com.martige.model.DatHostPathsItem
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.entities.User
 import net.dv8tion.jda.api.entities.VoiceChannel
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
@@ -15,38 +21,32 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.io.InputStream
 import java.util.*
 import java.util.concurrent.TimeUnit
 
 
-class BotService {
-
-    companion object {
-        private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
-        private lateinit var gameServerIp: String
-        lateinit var gameServerId: String
-        var auth64String = "Basic "
-        var dmTemplate = "Your scrim server is ready! Paste this into your console:"
-        var discordPrivilegeRoleId: Long = 0
-        var discordVoiceChannelId: Long = 0
-        private var queue: ArrayList<User> = arrayListOf()
-        val httpClient = OkHttpClient.Builder()
-            .readTimeout(30, TimeUnit.SECONDS)
-            .build()
-
-        fun init(props: Properties) {
-            gameServerIp = props.getProperty("gameserver.ip")
-            gameServerId = props.getProperty("gameserver.id")
-            auth64String += Base64.getEncoder()
-                .encodeToString(
-                    "${props.getProperty("dathost.username")}:${props.getProperty("dathost.password")}"
-                        .toByteArray()
-                )
-            dmTemplate = props.getProperty("dm.template") ?: dmTemplate
-            discordPrivilegeRoleId = props.getProperty("discord.role.privilege.id").toLong()
-            discordVoiceChannelId = props.getProperty("discord.voicechannel.id").toLong()
-        }
-    }
+class BotService(props: Properties, private var jda: JDA) {
+    private var gameServerIp: String = props.getProperty("gameserver.ip")
+    private var gameServerId = props.getProperty("gameserver.id")
+    private var auth64String = "Basic " + Base64.getEncoder()
+        .encodeToString(
+            "${props.getProperty("dathost.username")}:${props.getProperty("dathost.password")}"
+                .toByteArray()
+        )
+    private var dmTemplate =
+        props.getProperty("dm.template") ?: "Your scrim server is ready! Paste this into your console:"
+    private var discordPrivilegeRoleId = props.getProperty("discord.role.privilege.id").toLong()
+    private var discordVoiceChannelId = props.getProperty("discord.voicechannel.id").toLong()
+    private var discordTextChannelId: Long = props.getProperty("discord.textchannel.id").toLong()
+    private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
+    private var queue: ArrayList<User> = arrayListOf()
+    private val httpClient = OkHttpClient.Builder()
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+    private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/mert-scrim-bot").build()
+    private var dropboxClient: DbxClientV2 = DbxClientV2(config, props.getProperty("dropbox.token"))
+    private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
 
     fun addToQueue(event: MessageReceivedEvent) {
         if (queue.size == 10) {
@@ -92,19 +92,20 @@ class BotService {
         event.channel.sendMessage("Queue cleared").queue()
     }
 
-    fun startServer(event: MessageReceivedEvent, force: Boolean) {
+    fun startServer(event: MessageReceivedEvent) {
+        val force = event.message.contentRaw.contains(" -force")
         if (!isMemberPrivileged(event) && force) return
-        val gameServer = firstGameServer(httpClient) ?: return
+        val gameServer = findGameServerById(httpClient, gameServerId) ?: return
         val isEmpty = gameServer.players_online == 0
         if ((queue.size == 10 || force) && isEmpty) {
             event.channel.sendMessage("Starting scrim server...").queue()
         } else {
             if (!isEmpty) event.channel
-                .sendMessage("Yo, <@${event.author.id}> I cant start the server it's not empty")
+                .sendMessage("Yo, <@${event.author.id}> I can't start the server because it's not empty")
                 .queue()
             else
                 event.channel
-                    .sendMessage("Yo, <@${event.author.id}> I cant start the server because the queue isn't full")
+                    .sendMessage("Yo, <@${event.author.id}> I can't start the server because the queue isn't full")
                     .queue()
             return
         }
@@ -115,57 +116,55 @@ class BotService {
         log.info("Server stop response: ${stopServerResponse.message}")
         val startServerResponse = startGameServer()
         log.info("Server start response: ${startServerResponse.message}")
-        for (x in 0..24) {
-            val gameServerPing = firstGameServer(httpClient) ?: return
-            if (gameServerPing.booting) {
-                log.info("Server is still booting, waiting 5s...")
-                Thread.sleep(5000)
-            } else {
-                log.info("Server has booted")
-                break
-            }
-        }
-        queue.forEach { user ->
-            user.openPrivateChannel()
-                .queue { privateChannel -> privateChannel.sendMessage(generateTemplate(randomPass)).queue() }
-        }
-        val unconnectedUsers: ArrayList<User> = arrayListOf()
-        queue.forEach { user ->
-            val channel: VoiceChannel? = event.guild.voiceChannels
-                .firstOrNull { voiceChannel ->
-                    voiceChannel.members.firstOrNull { member -> member.user.idLong == user.idLong } != null
+        GlobalScope.launch {
+            for (x in 0..24) {
+                val gameServerPing = findGameServerById(httpClient, gameServerId) ?: return@launch
+                if (gameServerPing.booting) {
+                    log.info("Server is still booting, waiting 5s...")
+                    delay(5000)
+                } else {
+                    log.info("Server has booted")
+                    break
                 }
-            if (channel != null) {
-                event.guild.moveVoiceMember(
-                    event.guild.getMember(user)!!,
-                    event.guild.getVoiceChannelById(discordVoiceChannelId)
-                ).queue()
-            } else {
-                unconnectedUsers.add(user)
-                user.openPrivateChannel()
-                    .queue { privateChannel ->
-                        privateChannel.sendMessage(
-                            "Please connect to the `${event.guild.name} > ${event.guild.getVoiceChannelById(
-                                discordVoiceChannelId
-                            )?.name}` voice channel"
-                        ).queue()
-                    }
             }
+            queue.forEach { user ->
+                user.openPrivateChannel()
+                    .queue { privateChannel -> privateChannel.sendMessage(generateTemplate(randomPass)).queue() }
+            }
+            val unconnectedUsers: ArrayList<User> = arrayListOf()
+            queue.forEach { user ->
+                val channel: VoiceChannel? = event.guild.voiceChannels
+                    .firstOrNull { voiceChannel ->
+                        voiceChannel.members.firstOrNull { member -> member.user.idLong == user.idLong } != null
+                    }
+                if (channel != null) {
+                    event.guild.moveVoiceMember(
+                        event.guild.getMember(user)!!,
+                        event.guild.getVoiceChannelById(discordVoiceChannelId)
+                    ).queue()
+                } else {
+                    unconnectedUsers.add(user)
+                    user.openPrivateChannel()
+                        .queue { privateChannel ->
+                            privateChannel.sendMessage(
+                                "Please connect to the `${event.guild.name} > ${event.guild.getVoiceChannelById(
+                                    discordVoiceChannelId
+                                )?.name}` voice channel"
+                            ).queue()
+                        }
+                }
+            }
+            if (unconnectedUsers.size > 0) {
+                val stringBuilder =
+                    StringBuilder().appendln("The following queued users are not in the discord and cannot be moved to the default scrim voice channel:")
+                unconnectedUsers.forEach { stringBuilder.appendln("- <@${it.id}>") }
+                event.channel.sendMessage(stringBuilder.toString()).queue()
+            }
+            // cleanup
+            queue.clear()
+            log.info("Startup process has completed successfully")
         }
-        event.channel.sendMessage(
-            MessageBuilder().append("Moved queued users to the scrim channel, your scrim is starting")
-                .setTTS(true)
-                .build()
-        ).queue()
-        if (unconnectedUsers.size > 0) {
-            val stringBuilder =
-                StringBuilder().appendln("The following queued users are not in the discord and cannot be moved to the default scrim voice channel:")
-            unconnectedUsers.forEach { stringBuilder.appendln("- <@${it.id}>") }
-            event.channel.sendMessage(stringBuilder.toString()).queue()
-        }
-        // cleanup
-        queue.clear()
-        log.info("Startup process has completed successfully")
+
     }
 
     fun recoverQueue(event: MessageReceivedEvent) {
@@ -192,7 +191,7 @@ class BotService {
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
-    private fun firstGameServer(httpClient: OkHttpClient): DatHostGameServer? {
+    private fun findGameServerById(httpClient: OkHttpClient, gameServerId: String): DatHostGameServer? {
         val serverStateRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers")
             .get()
@@ -234,6 +233,28 @@ class BotService {
         return httpClient.newCall(startServerRequest).execute()
     }
 
+    private fun listGameServerFiles(path: String = ""): List<DatHostPathsItem>? {
+        val listGameServerFilesRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files")
+            .get()
+            .header("Authorization", auth64String)
+            .addHeader("path", path)
+            .build()
+        val serverStateResponse = httpClient.newCall(listGameServerFilesRequest).execute()
+        val responseBody = serverStateResponse.body?.string() ?: return null
+        return Gson().fromJson<List<DatHostPathsItem>>(responseBody)
+    }
+
+    private fun getFile(path: String): InputStream? {
+        val getFileRequest = Request.Builder()
+            .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files/$path")
+            .get()
+            .header("Authorization", auth64String)
+            .build()
+        val serverStateResponse = httpClient.newCall(getFileRequest).execute()
+        return serverStateResponse.body?.byteStream() ?: return null
+    }
+
     private fun generateTemplate(password: String): String {
         return "$dmTemplate\n`connect $gameServerIp;password $password`"
     }
@@ -243,6 +264,40 @@ class BotService {
             .contains(event.member)
     }
 
-    inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)
+    fun enableDemoUpload() {
+        log.info("Started demo upload feature")
+        GlobalScope.launch {
+            while (true) {
+                delay(60000)
+                val rootFiles = listGameServerFiles() ?: listOf()
+                val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
+                val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
+                val filesToUpload =
+                    filteredFiles.filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
+                val uploadedPaths = arrayListOf<String>()
+                filesToUpload.forEach {
+                    val file = getFile(it.path)
+                    file.use { `in` ->
+                        val uploadPath = "$dropboxDemosFolder/${it.path}"
+                        dropboxClient.files().uploadBuilder(uploadPath)
+                            .uploadAndFinish(`in`)
+                        uploadedPaths.add(it.path)
+                    }
+                }
+                if (uploadedPaths.isNotEmpty()) {
+                    val stringBuilder = StringBuilder().appendln("New `.dem` replay files are available:")
+                    uploadedPaths.forEach {
+                        val shareLink = dropboxClient.sharing().createSharedLinkWithSettings("$dropboxDemosFolder/$it")
+                        val title = "(de_)([a-z]*)".toRegex().find(it)?.value ?: "Unknown Map"
+                        stringBuilder.appendln("$title - ${shareLink.url}")
+                    }
+                    val channel = jda.getTextChannelById(discordTextChannelId)
+                    channel?.sendMessage(stringBuilder)?.queue()
+                }
+            }
+        }
+    }
+
+    private inline fun <reified T> Gson.fromJson(json: String) = fromJson<T>(json, object : TypeToken<T>() {}.type)
 
 }
