@@ -21,7 +21,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.io.InputStream
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -112,12 +111,15 @@ class BotService(props: Properties, private var jda: JDA) {
             return
         }
         val randomPass = Math.random().toString().replace("0.", "")
-        val passwordChangeResponse = changeGameServerPassword(randomPass)
-        log.info("Server password change response: $passwordChangeResponse")
-        val stopServerResponse = stopGameServer()
-        log.info("Server stop response: $stopServerResponse")
-        val startServerResponse = startGameServer()
-        log.info("Server start response: $startServerResponse")
+        changeGameServerPassword(randomPass).use {
+            log.info("Server password change response: ${it.message}")
+        }
+        stopGameServer().use {
+            log.info("Server stop response: ${it.message}")
+        }
+        startGameServer().use {
+            log.info("Server start response: ${it.message}")
+        }
         GlobalScope.launch {
             for (x in 0..24) {
                 val gameServerPing = findGameServerById(httpClient, gameServerId) ?: return@launch
@@ -206,68 +208,53 @@ class BotService(props: Properties, private var jda: JDA) {
         return gameServers.first { it.id == gameServerId }
     }
 
-    private fun changeGameServerPassword(password: String): String {
+    private fun changeGameServerPassword(password: String): Response {
         val formUrlEncoded: MediaType? = "application/x-www-form-urlencoded; charset=utf-8".toMediaTypeOrNull()
         val changePasswordRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId")
             .put("csgo_settings.password=$password".toRequestBody(formUrlEncoded))
             .header("Authorization", auth64String)
             .build()
-        val response = httpClient.newCall(changePasswordRequest).execute()
-        val message = response.message
-        response.close()
-        return message
+        return httpClient.newCall(changePasswordRequest).execute()
     }
 
-    private fun stopGameServer(): String{
+    private fun stopGameServer(): Response {
         val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
         val stopServerRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/stop")
             .post("".toRequestBody(json))
             .header("Authorization", auth64String)
             .build()
-        val response = httpClient.newCall(stopServerRequest).execute()
-        val message = response.message
-        response.close()
-        return message
+        return httpClient.newCall(stopServerRequest).execute()
     }
 
-    private fun startGameServer(): String {
+    private fun startGameServer(): Response {
         val json: MediaType? = "application/json; charset=utf-8".toMediaTypeOrNull()
         val startServerRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/start")
             .post("".toRequestBody(json))
             .header("Authorization", auth64String)
             .build()
-        val response = httpClient.newCall(startServerRequest).execute()
-        val message = response.message
-        response.close()
-        return message
+        return httpClient.newCall(startServerRequest).execute()
     }
 
-    private fun listGameServerFiles(path: String = ""): List<DatHostPathsItem>? {
+    private fun listGameServerFiles(path: String = ""): Response {
         val listGameServerFilesRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files")
             .get()
             .header("Authorization", auth64String)
             .addHeader("path", path)
             .build()
-        val serverStateResponse = httpClient.newCall(listGameServerFilesRequest).execute()
-        val responseBody = serverStateResponse.body?.string() ?: return null
-        serverStateResponse.close()
-        return Gson().fromJson<List<DatHostPathsItem>>(responseBody)
+        return httpClient.newCall(listGameServerFilesRequest).execute()
     }
 
-    private fun getFile(path: String): InputStream? {
+    private fun getFile(path: String): Response {
         val getFileRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files/$path")
             .get()
             .header("Authorization", auth64String)
             .build()
-        val getFileResponse = httpClient.newCall(getFileRequest).execute()
-        val body = getFileResponse.body?.byteStream() ?: return null
-        getFileResponse.close()
-        return body
+        return httpClient.newCall(getFileRequest).execute()
     }
 
     private fun generateTemplate(password: String): String {
@@ -284,20 +271,25 @@ class BotService(props: Properties, private var jda: JDA) {
         log.info("Started demo upload feature")
         GlobalScope.launch {
             while (true) {
-                delay(60000)
-                val rootFiles = listGameServerFiles() ?: listOf()
+                var rootFiles: List<DatHostPathsItem> = listOf()
+                listGameServerFiles().use {
+                    val responseBody = it.body?.string() ?: ""
+                    rootFiles = Gson().fromJson<List<DatHostPathsItem>>(responseBody) ?: listOf()
+                }
                 val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
                 val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
                 val filesToUpload =
                     filteredFiles.filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
                 val uploadedPaths = arrayListOf<String>()
                 filesToUpload.forEach {
-                    val file = getFile(it.path)
+                    val getFileResponse = getFile(it.path)
+                    val file = getFileResponse.body?.byteStream() ?: return@forEach
                     file.use { `in` ->
                         val uploadPath = "$dropboxDemosFolder/${it.path}"
                         dropboxClient.files().uploadBuilder(uploadPath)
                             .uploadAndFinish(`in`)
                         uploadedPaths.add(it.path)
+                        getFileResponse.close()
                     }
                 }
                 if (uploadedPaths.isNotEmpty()) {
@@ -310,6 +302,7 @@ class BotService(props: Properties, private var jda: JDA) {
                     val channel = jda.getTextChannelById(discordTextChannelId)
                     channel?.sendMessage(stringBuilder)?.queue()
                 }
+                delay(60000)
             }
         }
     }
