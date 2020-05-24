@@ -46,7 +46,7 @@ class BotService(props: Properties, private var jda: JDA) {
         .build()
     private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/mert-scrim-bot").build()
     private var dropboxClient: DbxClientV2 = DbxClientV2(config, props.getProperty("dropbox.token"))
-    private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder")
+    private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
 
     fun addToQueue(event: MessageReceivedEvent) {
         if (queue.size == 10) {
@@ -92,7 +92,8 @@ class BotService(props: Properties, private var jda: JDA) {
         event.channel.sendMessage("Queue cleared").queue()
     }
 
-    fun startServer(event: MessageReceivedEvent, force: Boolean) {
+    fun startServer(event: MessageReceivedEvent) {
+        val force = event.message.contentRaw.contains(" -force")
         if (!isMemberPrivileged(event) && force) return
         val gameServer = findGameServerById(httpClient, gameServerId) ?: return
         val isEmpty = gameServer.players_online == 0
@@ -100,11 +101,11 @@ class BotService(props: Properties, private var jda: JDA) {
             event.channel.sendMessage("Starting scrim server...").queue()
         } else {
             if (!isEmpty) event.channel
-                .sendMessage("Yo, <@${event.author.id}> I cant start the server because it's not empty")
+                .sendMessage("Yo, <@${event.author.id}> I can't start the server because it's not empty")
                 .queue()
             else
                 event.channel
-                    .sendMessage("Yo, <@${event.author.id}> I cant start the server because the queue isn't full")
+                    .sendMessage("Yo, <@${event.author.id}> I can't start the server because the queue isn't full")
                     .queue()
             return
         }
@@ -265,23 +266,33 @@ class BotService(props: Properties, private var jda: JDA) {
 
     fun enableDemoUpload() {
         GlobalScope.launch {
-            while (false) {
+            while (true) {
                 delay(60000)
                 val rootFiles = listGameServerFiles() ?: listOf()
-                rootFiles.filter { it.path.endsWith(".dem") }
+                val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
                 val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
                 val filesToUpload =
-                    rootFiles.filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
+                    filteredFiles.filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
+                val uploadedPaths = arrayListOf<String>()
                 filesToUpload.forEach {
                     val file = getFile(it.path)
                     file.use { `in` ->
-                        dropboxClient.files().uploadBuilder("$dropboxDemosFolder/${it.path}")
+                        val uploadPath = "$dropboxDemosFolder/${it.path}"
+                        dropboxClient.files().uploadBuilder(uploadPath)
                             .uploadAndFinish(`in`)
+                        uploadedPaths.add(it.path)
                     }
                 }
-                val shareLink = dropboxClient.sharing().createSharedLinkWithSettings(dropboxDemosFolder)
-                val channel = jda.getTextChannelById(discordTextChannelId)
-                channel?.sendMessage("New `.dem` replay files are available here: ${shareLink.url}")
+                if (uploadedPaths.isNotEmpty()) {
+                    val stringBuilder = StringBuilder().appendln("New `.dem` replay files are available:")
+                    uploadedPaths.forEach {
+                        val shareLink = dropboxClient.sharing().createSharedLinkWithSettings("$dropboxDemosFolder/$it")
+                        val title = "(de_)([a-z]*)".toRegex().find(it)?.value ?: "Unknown Map"
+                        stringBuilder.appendln("$title - ${shareLink.url}")
+                    }
+                    val channel = jda.getTextChannelById(discordTextChannelId)
+                    channel?.sendMessage(stringBuilder)?.queue()
+                }
             }
         }
     }

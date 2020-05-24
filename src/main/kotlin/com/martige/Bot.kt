@@ -21,8 +21,7 @@ class Bot : ListenerAdapter() {
             Command.JOIN -> botService.addToQueue(event)
             Command.LEAVE -> botService.removeFromQueue(event)
             Command.LIST -> botService.listQueue(event)
-            Command.START -> botService.startServer(event, false)
-            Command.STARTOVERRIDE -> botService.startServer(event, true)
+            Command.START -> botService.startServer(event)
             Command.RECOVER -> botService.recoverQueue(event)
             Command.CLEARQUEUE -> botService.clearQueue(event)
             Command.HELP -> botService.listCommands(event)
@@ -71,8 +70,7 @@ class Bot : ListenerAdapter() {
         JOIN("!join", "Join the scrim queue"),
         LEAVE("!leave", "Leave the scrim queue"),
         LIST("!list", "Lists all users in scrim queue"),
-        START("!start", "Start the scrim after the queue is full"),
-        STARTOVERRIDE("!start -force", "Start the scrim even if the queue is not full (privileged)"),
+        START("!start", "Start the scrim after the queue is full. Add \"-force\" to force start (privileged argument)"),
         RECOVER("!recover", "Tag all users after command to create new queue (privileged)"),
         CLEARQUEUE("!clearqueue", "Clears the queue (privileged)"),
         HELP("!help", "What you are currently seeing"),
