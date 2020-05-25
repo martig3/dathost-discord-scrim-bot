@@ -318,7 +318,7 @@ class BotService(props: Properties, private var jda: JDA) {
                 clearTime.set(Calendar.HOUR_OF_DAY, hour)
                 clearTime.set(Calendar.MINUTE, 0)
                 clearTime.set(Calendar.SECOND, 0)
-                if (clearTime.before(currentDate)) {
+                if (clearTime.time.before(currentDate)) {
                     clearTime = Calendar.getInstance()
                     clearTime.timeZone = TimeZone.getDefault()
                     clearTime.add(Calendar.DATE, 1)
