@@ -313,12 +313,14 @@ class BotService(props: Properties, private var jda: JDA) {
         GlobalScope.launch {
             while (true) {
                 val currentDate = Date()
-                val clearTime = Calendar.getInstance()
+                var clearTime = Calendar.getInstance()
                 clearTime.timeZone = TimeZone.getDefault()
                 clearTime.set(Calendar.HOUR_OF_DAY, hour)
                 clearTime.set(Calendar.MINUTE, 0)
                 clearTime.set(Calendar.SECOND, 0)
                 if (clearTime.before(currentDate)) {
+                    clearTime = Calendar.getInstance()
+                    clearTime.timeZone = TimeZone.getDefault()
                     clearTime.add(Calendar.DATE, 1)
                     clearTime.set(Calendar.HOUR_OF_DAY, hour)
                     clearTime.set(Calendar.MINUTE, 0)
@@ -330,7 +332,7 @@ class BotService(props: Properties, private var jda: JDA) {
                 val channel = jda.getTextChannelById(discordTextChannelId) ?: return@launch
                 if (queue.size > 0) {
                     channel.sendMessage("Auto-clearing queue in 2 min").queue()
-                    delay(2000)
+                    delay(120000)
                     queue.clear()
                     channel.sendMessage("Queue has been auto-cleared").queue()
                 }
