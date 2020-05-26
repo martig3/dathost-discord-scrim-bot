@@ -14,6 +14,7 @@ The bot must be bound to one discord server and utilizes a specific text channel
 - `!clearqueue` - Clears the active queue (Privileged)
 - `!start` - Start the scrim after the queue is full. Add `-force` force start (Privileged Argument)
 - `!recover` - Tag all users after command to create a new queue (Privileged)
+- `!upload` - Manual command to upload `.dem` replay files. Only usable if `dropbox.upload.auto` value has been set to `false` 
 - `!help` - generates help message
 
 ## `!start` Sequence
@@ -49,6 +50,7 @@ _Note: Discord ids can be accessed by enabling developer mode_
 - `bot.autoclear` - _(Optional)_ enables auto-clearing of queue. Defaults to `false`
 - `bot.autoclear.hourofday` - _(Optional)_ specify the hour of day to autoclear queue (in 24h format). Defaults to `7`
 - `dropbox.upload` - _(Optional)_ enables the dropbox `.dem` replay files integration. Defaults to `false`
+- `dropbox.upload.auto` - (Optional) enables auto upload of `.dem` files (recommended), defaults to true. Otherwise set to `false` and use the manual `!upload` command.
 - `dropbox.token` - _(Optional)_ your dropbox API token
 - `dropbox.sharedfolder` - _(Optional)_ use only if your dropbox app has been configured to access all of your directories, although that is recommended for this use case
 ### `bot.properties` Example

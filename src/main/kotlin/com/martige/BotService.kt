@@ -14,10 +14,12 @@ import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.entities.User
 import net.dv8tion.jda.api.entities.VoiceChannel
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
-import okhttp3.*
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.internal.headersContentLength
+import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.InputStream
@@ -50,6 +52,7 @@ class BotService(props: Properties, private var jda: JDA) {
     private lateinit var dropboxClient: DbxClientV2
     private var dropboxToken = props.getProperty("dropbox.token")
     private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
+    private var manualUpload = props.getProperty("dropbox.upload.auto") ?: "true"
     private var uploadQueue: ArrayList<GameServerFile> = arrayListOf()
 
     fun addToQueue(event: MessageReceivedEvent) {
@@ -198,6 +201,17 @@ class BotService(props: Properties, private var jda: JDA) {
         event.channel.sendMessage(stringBuilder.toString()).queue()
     }
 
+    fun manualUpload(event: MessageReceivedEvent) {
+        if (manualUpload.toBoolean()) {
+            event.channel.sendMessage("Auto upload is enabled, to switch to manual upload option set `dropbox.upload.auto` property to `false`")
+                .queue()
+            return
+        }
+        event.channel.sendMessage("Uploading `.dem` replay files...").queue()
+        addDemosToQueue()
+        uploadDemos()
+    }
+
     private fun findGameServerById(httpClient: OkHttpClient, gameServerId: String): DatHostGameServer? {
         val serverStateRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers")
@@ -258,8 +272,7 @@ class BotService(props: Properties, private var jda: JDA) {
             .header("Authorization", auth64String)
             .build()
         val getFileResponse = httpClient.newCall(getFileRequest).execute()
-        val body = getFileResponse.body?.byteStream() ?: return null
-        return body
+        return getFileResponse.body?.byteStream() ?: return null
     }
 
     private fun generateTemplate(password: String): String {
@@ -271,68 +284,83 @@ class BotService(props: Properties, private var jda: JDA) {
             .contains(event.member)
     }
 
+    private fun addDemosToQueue() {
+        var rootFiles: List<DatHostPathsItem> = listOf()
+        listGameServerFiles().use {
+            val responseBody = it.body?.string() ?: ""
+            rootFiles = Gson().fromJson<List<DatHostPathsItem>>(responseBody) ?: listOf()
+        }
+        val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
+        val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
+        val filesToUpload = filteredFiles
+            .filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
+        filesToUpload.forEach {
+            if (!uploadQueue.map { item -> item.path }.contains(it.path)) {
+                uploadQueue.add(GameServerFile(it.path, 0))
+                log.info("Added ${it.path} to upload queue")
+            }
+        }
+    }
+
+    private fun uploadDemos(manualUpload: Boolean = false) {
+        val uploadedFiles = arrayListOf<GameServerFile>()
+        uploadQueue.forEach {
+            if (manualUpload) {
+                getGameServerFile(it.path).use { fileStreamForSize ->
+                    val fileSize = fileStreamForSize?.readBytes()?.size ?: -1
+                    if (fileSize < 0) {
+                        log.error("${it.path} returned a -1 content size")
+                        return@forEach
+                    }
+                    if (fileSize > it.lastSize) {
+                        it.lastSize = fileSize
+                        return@forEach
+                    }
+                }
+            }
+            getGameServerFile(it.path).use { fileStream ->
+                fileStream.use { `in` ->
+                    val uploadPath = "$dropboxDemosFolder/${it.path}"
+                    dropboxClient.files().uploadBuilder(uploadPath)
+                        .uploadAndFinish(`in`)
+                    uploadedFiles.add(it)
+                    log.info("Uploaded ${it.path} successfully")
+                }
+            }
+        }
+        if (uploadedFiles.isNotEmpty()) {
+            uploadQueue.removeAll(uploadedFiles)
+            val stringBuilder = StringBuilder().appendln("New `.dem` replay files are available:")
+            uploadedFiles.forEach {
+                val filePath = it.path
+                val shareLink =
+                    dropboxClient.sharing().createSharedLinkWithSettings("$dropboxDemosFolder/$filePath")
+                val title = "(de_)([a-z]*)".toRegex().find(filePath)?.value ?: "Unknown Map"
+                stringBuilder.appendln("$title - ${shareLink.url}")
+            }
+            val channel = jda.getTextChannelById(discordTextChannelId)
+            channel?.sendMessage(stringBuilder)?.queue()
+        }
+    }
+
     fun enableDemoUpload() {
         dropboxClient = DbxClientV2(config, dropboxToken)
-        log.info("Started demo upload feature")
+        val autoUpload = manualUpload.toBoolean()
+        if (!autoUpload) {
+            log.info("Started manual demo upload feature")
+            return
+        }
+        log.info("Started auto demo upload feature")
         GlobalScope.launch {
             while (true) {
                 delay(30000)
-                val uploadedFiles = arrayListOf<GameServerFile>()
-                uploadQueue.forEach {
-                    getGameServerFile(it.path).use { fileStreamForSize ->
-                        val fileSize = fileStreamForSize?.readBytes()?.size ?: -1
-                        if (fileSize < 0) {
-                            log.error("${it.path} returned a -1 content size")
-                            return@forEach
-                        }
-                        if (fileSize > it.lastSize) {
-                            it.lastSize = fileSize
-                            return@forEach
-                        }
-                    }
-                    getGameServerFile(it.path).use { fileStream ->
-                        fileStream.use { `in` ->
-                            val uploadPath = "$dropboxDemosFolder/${it.path}"
-                            dropboxClient.files().uploadBuilder(uploadPath)
-                                .uploadAndFinish(`in`)
-                            uploadedFiles.add(it)
-                            log.info("Uploaded ${it.path} successfully")
-                        }
-                    }
-                }
-                if (uploadedFiles.isNotEmpty()) {
-                    uploadQueue.removeAll(uploadedFiles)
-                    val stringBuilder = StringBuilder().appendln("New `.dem` replay files are available:")
-                    uploadedFiles.forEach {
-                        val filePath = it.path
-                        val shareLink =
-                            dropboxClient.sharing().createSharedLinkWithSettings("$dropboxDemosFolder/$filePath")
-                        val title = "(de_)([a-z]*)".toRegex().find(filePath)?.value ?: "Unknown Map"
-                        stringBuilder.appendln("$title - ${shareLink.url}")
-                    }
-                    val channel = jda.getTextChannelById(discordTextChannelId)
-                    channel?.sendMessage(stringBuilder)?.queue()
-                }
+                uploadDemos(autoUpload)
             }
         }
         GlobalScope.launch {
             while (true) {
-                var rootFiles: List<DatHostPathsItem> = listOf()
-                listGameServerFiles().use {
-                    val responseBody = it.body?.string() ?: ""
-                    rootFiles = Gson().fromJson<List<DatHostPathsItem>>(responseBody) ?: listOf()
-                }
-                val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
-                val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
-                val filesToUpload = filteredFiles
-                    .filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
-                filesToUpload.forEach {
-                    if (!uploadQueue.map { item -> item.path }.contains(it.path)) {
-                        uploadQueue.add(GameServerFile(it.path, 0))
-                        log.info("Added ${it.path} to upload queue")
-                    }
-                }
                 delay(60000)
+                addDemosToQueue()
             }
         }
     }

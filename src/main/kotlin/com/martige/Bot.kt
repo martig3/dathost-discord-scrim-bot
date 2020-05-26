@@ -24,6 +24,7 @@ class Bot : ListenerAdapter() {
             Command.START -> botService.startServer(event)
             Command.RECOVER -> botService.recoverQueue(event)
             Command.CLEARQUEUE -> botService.clearQueue(event)
+            Command.UPLOAD -> botService.manualUpload(event)
             Command.HELP -> botService.listCommands(event)
             Command.UNKNOWN -> botService.unknownCommand(event)
         }
@@ -75,6 +76,7 @@ class Bot : ListenerAdapter() {
         START("!start", "Start the scrim after the queue is full"),
         RECOVER("!recover", "Tag all users after command to create new queue (privileged)"),
         CLEARQUEUE("!clearqueue", "Clears the queue (privileged)"),
+        UPLOAD("!upload", "Manual upload of `.dem` replay files. Use only after scrim is complete (privileged)"),
         HELP("!help", "What you are currently seeing"),
         UNKNOWN("", "Placeholder for unknown commands");
 
