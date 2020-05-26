@@ -202,6 +202,11 @@ class BotService(props: Properties, private var jda: JDA) {
     }
 
     fun manualUpload(event: MessageReceivedEvent) {
+        if (manualUpload.toBoolean()) {
+            event.channel.sendMessage("Auto upload is enabled, to switch to manual upload option set `dropbox.upload.auto` property to `false`")
+                .queue()
+            return
+        }
         event.channel.sendMessage("Uploading `.dem` replay files...").queue()
         addDemosToQueue()
         uploadDemos()
