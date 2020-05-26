@@ -14,9 +14,12 @@ import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.entities.User
 import net.dv8tion.jda.api.entities.VoiceChannel
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
-import okhttp3.*
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.InputStream
@@ -49,7 +52,7 @@ class BotService(props: Properties, private var jda: JDA) {
     private lateinit var dropboxClient: DbxClientV2
     private var dropboxToken = props.getProperty("dropbox.token")
     private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
-    private var manualUpload = props.getProperty("dropbox.upload.auto") ?: "false"
+    private var manualUpload = props.getProperty("dropbox.upload.auto") ?: "true"
     private var uploadQueue: ArrayList<GameServerFile> = arrayListOf()
 
     fun addToQueue(event: MessageReceivedEvent) {
@@ -199,11 +202,11 @@ class BotService(props: Properties, private var jda: JDA) {
     }
 
     fun manualUpload(event: MessageReceivedEvent) {
-        event.channel.sendMessage("Uploading `.dem` replay files...")
+        event.channel.sendMessage("Uploading `.dem` replay files...").queue()
         addDemosToQueue()
         uploadDemos()
     }
-    
+
     private fun findGameServerById(httpClient: OkHttpClient, gameServerId: String): DatHostGameServer? {
         val serverStateRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers")
@@ -264,8 +267,7 @@ class BotService(props: Properties, private var jda: JDA) {
             .header("Authorization", auth64String)
             .build()
         val getFileResponse = httpClient.newCall(getFileRequest).execute()
-        val body = getFileResponse.body?.byteStream() ?: return null
-        return body
+        return getFileResponse.body?.byteStream() ?: return null
     }
 
     private fun generateTemplate(password: String): String {
@@ -339,7 +341,10 @@ class BotService(props: Properties, private var jda: JDA) {
     fun enableDemoUpload() {
         dropboxClient = DbxClientV2(config, dropboxToken)
         val autoUpload = manualUpload.toBoolean()
-        if (!autoUpload) return else log.info("Started manual demo upload feature")
+        if (!autoUpload) {
+            log.info("Started manual demo upload feature")
+            return
+        }
         log.info("Started auto demo upload feature")
         GlobalScope.launch {
             while (true) {
