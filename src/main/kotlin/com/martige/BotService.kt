@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.martige.model.DatHostGameServer
 import com.martige.model.DatHostPathsItem
+import com.martige.model.GameServerFile
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -13,12 +14,10 @@ import net.dv8tion.jda.api.JDA
 import net.dv8tion.jda.api.entities.User
 import net.dv8tion.jda.api.entities.VoiceChannel
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent
-import okhttp3.MediaType
+import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
+import okhttp3.internal.headersContentLength
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.util.*
@@ -41,13 +40,16 @@ class BotService(props: Properties, private var jda: JDA) {
     private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
     private var queue: ArrayList<User> = arrayListOf()
     private val httpClient = OkHttpClient.Builder()
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(2, TimeUnit.MINUTES)
+        .writeTimeout(2, TimeUnit.MINUTES)
+        .callTimeout(2, TimeUnit.MINUTES)
         .build()
     private var autoclearHour = props.getProperty("bot.autoclear.hourofday") ?: "7"
     private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/mert-scrim-bot").build()
     private lateinit var dropboxClient: DbxClientV2
     private var dropboxToken = props.getProperty("dropbox.token")
     private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
+    private var uploadQueue: ArrayList<GameServerFile> = arrayListOf()
 
     fun addToQueue(event: MessageReceivedEvent) {
         if (queue.size == 10) {
@@ -248,7 +250,7 @@ class BotService(props: Properties, private var jda: JDA) {
         return httpClient.newCall(listGameServerFilesRequest).execute()
     }
 
-    private fun getFile(path: String): Response {
+    private fun getGameServerFile(path: String): Response {
         val getFileRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files/$path")
             .get()
@@ -271,6 +273,46 @@ class BotService(props: Properties, private var jda: JDA) {
         log.info("Started demo upload feature")
         GlobalScope.launch {
             while (true) {
+                delay(30000)
+                val uploadedFiles = arrayListOf<GameServerFile>()
+                uploadQueue.forEach {
+                    getGameServerFile(it.path).use { response ->
+                        val file = response.body?.byteStream()
+                        val fileSize = response.headersContentLength()
+                        if (fileSize < 0) {
+                            log.error("${it.path} returned a -1 content size")
+                            return@forEach
+                        }
+                        if (fileSize > it.lastSize) {
+                            it.lastSize = fileSize
+                            return@forEach
+                        }
+                        file.use { `in` ->
+                            val uploadPath = "$dropboxDemosFolder/${it.path}"
+                            dropboxClient.files().uploadBuilder(uploadPath)
+                                .uploadAndFinish(`in`)
+                            uploadedFiles.add(it)
+                            log.info("Uploaded ${it.path} successfully")
+                        }
+                    }
+                }
+                if (uploadedFiles.isNotEmpty()) {
+                    uploadQueue.removeAll(uploadedFiles)
+                    val stringBuilder = StringBuilder().appendln("New `.dem` replay files are available:")
+                    uploadedFiles.forEach {
+                        val filePath = it.path
+                        val shareLink =
+                            dropboxClient.sharing().createSharedLinkWithSettings("$dropboxDemosFolder/$filePath")
+                        val title = "(de_)([a-z]*)".toRegex().find(filePath)?.value ?: "Unknown Map"
+                        stringBuilder.appendln("$title - ${shareLink.url}")
+                    }
+                    val channel = jda.getTextChannelById(discordTextChannelId)
+                    channel?.sendMessage(stringBuilder)?.queue()
+                }
+            }
+        }
+        GlobalScope.launch {
+            while (true) {
                 var rootFiles: List<DatHostPathsItem> = listOf()
                 listGameServerFiles().use {
                     val responseBody = it.body?.string() ?: ""
@@ -278,29 +320,13 @@ class BotService(props: Properties, private var jda: JDA) {
                 }
                 val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
                 val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
-                val filesToUpload =
-                    filteredFiles.filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
-                val uploadedPaths = arrayListOf<String>()
+                val filesToUpload = filteredFiles
+                    .filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
                 filesToUpload.forEach {
-                    val getFileResponse = getFile(it.path)
-                    val file = getFileResponse.body?.byteStream() ?: return@forEach
-                    file.use { `in` ->
-                        val uploadPath = "$dropboxDemosFolder/${it.path}"
-                        dropboxClient.files().uploadBuilder(uploadPath)
-                            .uploadAndFinish(`in`)
-                        uploadedPaths.add(it.path)
-                        getFileResponse.close()
+                    if (!uploadQueue.map { item -> item.path }.contains(it.path)) {
+                        uploadQueue.add(GameServerFile(it.path, 0))
+                        log.info("Added ${it.path} to upload queue")
                     }
-                }
-                if (uploadedPaths.isNotEmpty()) {
-                    val stringBuilder = StringBuilder().appendln("New `.dem` replay files are available:")
-                    uploadedPaths.forEach {
-                        val shareLink = dropboxClient.sharing().createSharedLinkWithSettings("$dropboxDemosFolder/$it")
-                        val title = "(de_)([a-z]*)".toRegex().find(it)?.value ?: "Unknown Map"
-                        stringBuilder.appendln("$title - ${shareLink.url}")
-                    }
-                    val channel = jda.getTextChannelById(discordTextChannelId)
-                    channel?.sendMessage(stringBuilder)?.queue()
                 }
                 delay(60000)
             }
@@ -327,14 +353,16 @@ class BotService(props: Properties, private var jda: JDA) {
                     clearTime.set(Calendar.SECOND, 0)
                 }
                 val msBetween = clearTime.time.toInstant().toEpochMilli() - currentDate.toInstant().toEpochMilli()
-                log.info("Autoclearing in ${msBetween}ms")
-                delay(msBetween)
-                val channel = jda.getTextChannelById(discordTextChannelId) ?: return@launch
-                if (queue.size > 0) {
-                    channel.sendMessage("Auto-clearing queue in 2 min").queue()
-                    delay(120000)
-                    queue.clear()
-                    channel.sendMessage("Queue has been auto-cleared").queue()
+                if (msBetween > 0) {
+                    log.info("Autoclearing in ${msBetween}ms")
+                    delay(msBetween)
+                    val channel = jda.getTextChannelById(discordTextChannelId) ?: return@launch
+                    if (queue.size > 0) {
+                        channel.sendMessage("Auto-clearing queue in 2 min").queue()
+                        delay(120000)
+                        queue.clear()
+                        channel.sendMessage("Queue has been auto-cleared").queue()
+                    }
                 }
             }
         }
