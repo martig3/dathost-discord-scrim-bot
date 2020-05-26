@@ -20,6 +20,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.internal.headersContentLength
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.io.InputStream
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -250,13 +251,15 @@ class BotService(props: Properties, private var jda: JDA) {
         return httpClient.newCall(listGameServerFilesRequest).execute()
     }
 
-    private fun getGameServerFile(path: String): Response {
+    private fun getGameServerFile(path: String): InputStream? {
         val getFileRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files/$path")
             .get()
             .header("Authorization", auth64String)
             .build()
-        return httpClient.newCall(getFileRequest).execute()
+        val getFileResponse = httpClient.newCall(getFileRequest).execute()
+        val body = getFileResponse.body?.byteStream() ?: return null
+        return body
     }
 
     private fun generateTemplate(password: String): String {
@@ -276,18 +279,19 @@ class BotService(props: Properties, private var jda: JDA) {
                 delay(30000)
                 val uploadedFiles = arrayListOf<GameServerFile>()
                 uploadQueue.forEach {
-                    getGameServerFile(it.path).use { response ->
-                        val file = response.body?.byteStream()
-                        val fileSize = response.headersContentLength()
-                        if (fileSize < 0) {
-                            log.error("${it.path} returned a -1 content size")
-                            return@forEach
+                    getGameServerFile(it.path).use { fileStream ->
+                        getGameServerFile(it.path).use { fileStreamForSize ->
+                            val fileSize = fileStreamForSize?.readBytes()?.size ?: -1
+                            if (fileSize < 0) {
+                                log.error("${it.path} returned a -1 content size")
+                                return@forEach
+                            }
+                            if (fileSize > it.lastSize) {
+                                it.lastSize = fileSize
+                                return@forEach
+                            }
                         }
-                        if (fileSize > it.lastSize) {
-                            it.lastSize = fileSize
-                            return@forEach
-                        }
-                        file.use { `in` ->
+                        fileStream.use { `in` ->
                             val uploadPath = "$dropboxDemosFolder/${it.path}"
                             dropboxClient.files().uploadBuilder(uploadPath)
                                 .uploadAndFinish(`in`)
