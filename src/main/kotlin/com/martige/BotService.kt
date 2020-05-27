@@ -51,7 +51,7 @@ class BotService(props: Properties, private var jda: JDA) {
     private lateinit var dropboxClient: DbxClientV2
     private var dropboxToken = props.getProperty("dropbox.token")
     private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
-    private var manualUpload = props.getProperty("dropbox.upload.auto") ?: "true"
+    private var autoUpload = props.getProperty("dropbox.upload.auto") ?: "true"
     private var uploadQueue: ArrayList<GameServerFile> = arrayListOf()
 
     fun addToQueue(event: MessageReceivedEvent) {
@@ -201,7 +201,7 @@ class BotService(props: Properties, private var jda: JDA) {
     }
 
     fun manualUpload(event: MessageReceivedEvent) {
-        if (manualUpload.toBoolean()) {
+        if (autoUpload.toBoolean()) {
             event.channel.sendMessage("Auto upload is enabled, to switch to manual upload option set `dropbox.upload.auto` property to `false`")
                 .queue()
             return
@@ -346,7 +346,7 @@ class BotService(props: Properties, private var jda: JDA) {
 
     fun enableDemoUpload() {
         dropboxClient = DbxClientV2(config, dropboxToken)
-        val autoUpload = manualUpload.toBoolean()
+        val autoUpload = autoUpload.toBoolean()
         if (!autoUpload) {
             log.info("Started manual demo upload feature")
             return
