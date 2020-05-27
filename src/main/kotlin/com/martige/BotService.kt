@@ -43,9 +43,9 @@ class BotService(props: Properties, private var jda: JDA) {
     private val log: Logger = LoggerFactory.getLogger(BotService::class.java)
     private var queue: ArrayList<User> = arrayListOf()
     private val httpClient = OkHttpClient.Builder()
-        .readTimeout(2, TimeUnit.MINUTES)
-        .writeTimeout(2, TimeUnit.MINUTES)
-        .callTimeout(2, TimeUnit.MINUTES)
+        .readTimeout(10, TimeUnit.MINUTES)
+        .writeTimeout(10, TimeUnit.MINUTES)
+        .callTimeout(5, TimeUnit.MINUTES)
         .build()
     private var autoclearHour = props.getProperty("bot.autoclear.hourofday") ?: "7"
     private var config: DbxRequestConfig = DbxRequestConfig.newBuilder("dropbox/mert-scrim-bot").build()
@@ -265,14 +265,13 @@ class BotService(props: Properties, private var jda: JDA) {
         return httpClient.newCall(listGameServerFilesRequest).execute()
     }
 
-    private fun getGameServerFile(path: String): InputStream? {
+    private fun getGameServerFile(path: String): Response {
         val getFileRequest = Request.Builder()
             .url("https://dathost.net/api/0.1/game-servers/$gameServerId/files/$path")
             .get()
             .header("Authorization", auth64String)
             .build()
-        val getFileResponse = httpClient.newCall(getFileRequest).execute()
-        return getFileResponse.body?.byteStream() ?: return null
+        return httpClient.newCall(getFileRequest).execute()
     }
 
     private fun generateTemplate(password: String): String {
@@ -306,8 +305,8 @@ class BotService(props: Properties, private var jda: JDA) {
         val uploadedFiles = arrayListOf<GameServerFile>()
         uploadQueue.forEach {
             if (manualUpload) {
-                getGameServerFile(it.path).use { fileStreamForSize ->
-                    val fileSize = fileStreamForSize?.readBytes()?.size ?: -1
+                getGameServerFile(it.path).use { response ->
+                    val fileSize = response.body?.byteStream()?.readBytes()?.size ?: -1
                     if (fileSize < 0) {
                         log.error("${it.path} returned a -1 content size")
                         return@forEach
@@ -318,8 +317,8 @@ class BotService(props: Properties, private var jda: JDA) {
                     }
                 }
             }
-            getGameServerFile(it.path).use { fileStream ->
-                fileStream.use { `in` ->
+            getGameServerFile(it.path).body?.byteStream().use { response ->
+                response.use { `in` ->
                     val uploadPath = "$dropboxDemosFolder/${it.path}"
                     dropboxClient.files().uploadBuilder(uploadPath)
                         .uploadAndFinish(`in`)
