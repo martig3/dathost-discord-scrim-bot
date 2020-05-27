@@ -22,7 +22,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import java.io.InputStream
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -301,10 +300,10 @@ class BotService(props: Properties, private var jda: JDA) {
         }
     }
 
-    private fun uploadDemos(manualUpload: Boolean = false) {
+    private fun uploadDemos(autoUpload: Boolean = false) {
         val uploadedFiles = arrayListOf<GameServerFile>()
         uploadQueue.forEach {
-            if (manualUpload) {
+            if (autoUpload) {
                 getGameServerFile(it.path).use { response ->
                     val fileSize = response.body?.byteStream()?.readBytes()?.size ?: -1
                     if (fileSize < 0) {
