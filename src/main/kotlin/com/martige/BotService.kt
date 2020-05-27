@@ -305,19 +305,22 @@ class BotService(props: Properties, private var jda: JDA) {
         uploadQueue.forEach {
             if (autoUpload) {
                 getGameServerFile(it.path).use { response ->
-                    val fileSize = response.body?.byteStream()?.readBytes()?.size ?: -1
-                    if (fileSize < 0) {
-                        log.error("${it.path} returned a -1 content size")
-                        return@forEach
+                    response.body?.use { body ->
+                        val fileSize = body.bytes().size
+                        if (fileSize < 0) {
+                            log.error("${it.path} returned a -1 content size")
+                            return@forEach
+                        }
+                        if (fileSize > it.lastSize) {
+                            it.lastSize = fileSize
+                            return@forEach
+                        }
                     }
-                    if (fileSize > it.lastSize) {
-                        it.lastSize = fileSize
-                        return@forEach
-                    }
+
                 }
             }
-            getGameServerFile(it.path).body?.byteStream().use { response ->
-                response.use { `in` ->
+            getGameServerFile(it.path).use { response ->
+                response.body?.byteStream().use { `in` ->
                     val uploadPath = "$dropboxDemosFolder/${it.path}"
                     dropboxClient.files().uploadBuilder(uploadPath)
                         .uploadAndFinish(`in`)
