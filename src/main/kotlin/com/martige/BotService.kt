@@ -386,7 +386,7 @@ class BotService(props: Properties, private var jda: JDA) {
                     clearTime.set(Calendar.SECOND, 0)
                 }
                 val msBetween = clearTime.time.toInstant().toEpochMilli() - currentDate.toInstant().toEpochMilli()
-                if (msBetween > 0) {
+                if (msBetween > 1) {
                     log.info("Autoclearing in ${msBetween}ms")
                     delay(msBetween)
                     val channel = jda.getTextChannelById(discordTextChannelId) ?: return@launch
