@@ -354,8 +354,8 @@ class BotService(props: Properties, private var jda: JDA) {
         log.info("Started auto demo upload feature")
         GlobalScope.launch {
             while (true) {
+                delay(120000)
                 uploadDemos(autoUpload)
-                delay(30000)
             }
         }
         GlobalScope.launch {
