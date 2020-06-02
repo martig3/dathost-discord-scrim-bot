@@ -281,21 +281,22 @@ class BotService(props: Properties, private var jda: JDA) {
             .contains(event.member)
     }
 
-    private fun findGameServerFileItem(path: String): DatHostPathsItem? {
+    private fun getGameServerFiles(): List<DatHostPathsItem> {
         var rootFiles: List<DatHostPathsItem> = listOf()
         listGameServerFiles().use {
+            if (!it.isSuccessful) return@use
             val responseBody = it.body?.string() ?: ""
             rootFiles = Gson().fromJson<List<DatHostPathsItem>>(responseBody) ?: listOf()
         }
-        return rootFiles.firstOrNull { path == it.path }
+        return rootFiles
+    }
+
+    private fun findGameServerFileItem(path: String): DatHostPathsItem? {
+        return getGameServerFiles().firstOrNull { path == it.path }
     }
 
     private fun addDemosToQueue() {
-        var rootFiles: List<DatHostPathsItem> = listOf()
-        listGameServerFiles().use {
-            val responseBody = it.body?.string() ?: ""
-            rootFiles = Gson().fromJson<List<DatHostPathsItem>>(responseBody) ?: listOf()
-        }
+        val rootFiles = getGameServerFiles()
         val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
         val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
         val filesToUpload = filteredFiles
