@@ -1,7 +1,9 @@
 package com.martige
 
 import com.dropbox.core.DbxRequestConfig
+import com.dropbox.core.NetworkIOException
 import com.dropbox.core.v2.DbxClientV2
+import com.dropbox.core.v2.files.ListFolderResult
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.martige.model.DatHostGameServer
@@ -298,14 +300,25 @@ class BotService(props: Properties, private var jda: JDA) {
     private fun addDemosToQueue() {
         val rootFiles = getGameServerFiles()
         val filteredFiles = rootFiles.filter { it.path.endsWith(".dem") }
-        val scrimFolderResult = dropboxClient.files().listFolder(dropboxDemosFolder)
-        val filesToUpload = filteredFiles
-            .filter { file -> !scrimFolderResult.entries.map { it.name }.contains(file.path) }
-        filesToUpload.forEach {
-            if (!uploadQueue.map { item -> item.path }.contains(it.path)) {
-                uploadQueue.add(UploadQueueItem(it.path, it.size))
-                log.info("Added ${it.path} to upload queue")
+        val scrimFolderResult = getDropboxFolderContents(dropboxDemosFolder)
+        scrimFolderResult?.let {
+            val filesToUpload = filteredFiles
+                .filter { file -> !it.entries.map { it.name }.contains(file.path) }
+            filesToUpload.forEach {
+                if (!uploadQueue.map { item -> item.path }.contains(it.path)) {
+                    uploadQueue.add(UploadQueueItem(it.path, it.size))
+                    log.info("Added ${it.path} to upload queue")
+                }
             }
+        }
+    }
+
+    private fun getDropboxFolderContents(dropboxDemosFolder: String): ListFolderResult? {
+        return try {
+            dropboxClient.files().listFolder(dropboxDemosFolder)
+        } catch (e: NetworkIOException) {
+            log.warn("Caught dropbox API network exception, if this persists it is likely there are elevated API errors")
+            null
         }
     }
 
