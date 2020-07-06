@@ -55,6 +55,7 @@ class BotService(props: Properties, private var jda: JDA) {
     private var dropboxDemosFolder = props.getProperty("dropbox.sharedfolder") ?: ""
     private var autoUpload = props.getProperty("dropbox.upload.auto") ?: "true"
     private var uploadQueue: ArrayList<UploadQueueItem> = arrayListOf()
+    private var isServerStarting = false
 
     fun addToQueue(event: MessageReceivedEvent) {
         if (queue.size == 10) {
@@ -101,6 +102,11 @@ class BotService(props: Properties, private var jda: JDA) {
     }
 
     fun startServer(event: MessageReceivedEvent) {
+        if (isServerStarting) {
+            event.channel.sendMessage("Server is already starting").queue()
+            return
+        }
+        isServerStarting = true
         val force = event.message.contentRaw.contains(" -force")
         if (!isMemberPrivileged(event) && force) return
         val gameServer = findGameServerById(httpClient, gameServerId) ?: return
@@ -173,6 +179,7 @@ class BotService(props: Properties, private var jda: JDA) {
             }
             // cleanup
             queue.clear()
+            isServerStarting = false
             log.info("Startup process has completed successfully")
         }
 
