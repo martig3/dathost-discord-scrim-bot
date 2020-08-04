@@ -102,13 +102,18 @@ class BotService(props: Properties, private var jda: JDA) {
     }
 
     fun startServer(event: MessageReceivedEvent) {
+        val force = event.message.contentRaw.contains(" -force")
+        if (!isMemberPrivileged(event) && force) return
+        if (!queue.contains(event.author) || isMemberPrivileged(event)) {
+            event.channel.sendMessage("<@${event.author.id}, you must be in the queue to start the server or have the correct role")
+                .queue()
+            return
+        }
         if (isServerStarting) {
             event.channel.sendMessage("Server is already starting").queue()
             return
         }
         isServerStarting = true
-        val force = event.message.contentRaw.contains(" -force")
-        if (!isMemberPrivileged(event) && force) return
         val gameServer = findGameServerById(httpClient, gameServerId) ?: return
         val isEmpty = gameServer.players_online == 0
         if ((queue.size == 10 || force) && isEmpty) {
