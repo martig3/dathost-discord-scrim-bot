@@ -104,8 +104,8 @@ class BotService(props: Properties, private var jda: JDA) {
     fun startServer(event: MessageReceivedEvent) {
         val force = event.message.contentRaw.contains(" -force")
         if (!isMemberPrivileged(event) && force) return
-        if (!queue.contains(event.author) || isMemberPrivileged(event)) {
-            event.channel.sendMessage("<@${event.author.id}, you must be in the queue to start the server or have the correct role")
+        if (queue.contains(event.author) || isMemberPrivileged(event)) {
+            event.channel.sendMessage("<@${event.author.id}>, you must be in the queue to start the server or have the correct role")
                 .queue()
             return
         }
