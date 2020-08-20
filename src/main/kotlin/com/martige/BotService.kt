@@ -362,7 +362,7 @@ class BotService(props: Properties, private var jda: JDA) {
                 val filePath = file.path
                 val shareLink =
                     dropboxClient.sharing().createSharedLinkWithSettings("$dropboxDemosFolder/$filePath")
-                val title = "(de_)([a-z]*)".toRegex().find(filePath)?.value ?: "Unknown Map"
+                val title = "(de_)[_1-z]*".toRegex().find(filePath)?.value ?: "Unknown Map"
                 stringBuilder.appendln("$title - ${shareLink.url}")
             }
             val channel = jda.getTextChannelById(discordTextChannelId)
