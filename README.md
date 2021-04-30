@@ -1,4 +1,6 @@
 # dathost-discord-scrim-bot
+**_Note: No longer maintained, replaced by [csgo-discord-scrimbot](https://github.com/Martig3/csgo-discord-scrimbot)_**
+
 Simple Discord bot for managing a queue for 10 man scrims in CSGO using DatHost's API
 
 ## Use Case
